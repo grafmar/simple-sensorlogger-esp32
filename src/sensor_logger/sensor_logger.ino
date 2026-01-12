@@ -5,6 +5,7 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include <FS.h>
+#include <LittleFS.h>
 
 #define ONE_HOUR 3600000UL
 
@@ -76,7 +77,7 @@ void setup() {
 
   startOTA();                  // Start the OTA service
 
-  startSPIFFS();               // Start the SPIFFS and list all contents
+  startLittleFS();             // Start the LittleFS and list all contents
 
   startMDNS();                 // Start the mDNS responder
 
@@ -141,7 +142,7 @@ void loop() {
 
       Serial.printf("Appending temperature to file: %lu,", actualTime);
       Serial.println(temp);
-      File tempLog = SPIFFS.open("/temp.csv", "a"); // Write the time and the temperature to the csv file
+      File tempLog = LittleFS.open("/temp.csv", "a"); // Write the time and the temperature to the csv file
       tempLog.print(actualTime);
       tempLog.print(',');
       tempLog.println(temp);
@@ -205,11 +206,11 @@ void startOTA() { // Start the OTA service
   Serial.println("OTA ready\r\n");
 }
 
-void startSPIFFS() { // Start the SPIFFS and list all contents
-  SPIFFS.begin();                             // Start the SPI Flash File System (SPIFFS)
-  Serial.println("SPIFFS started. Contents:");
+void startLittleFS() { // Start the LittleFS and list all contents
+  LittleFS.begin();                             // Start the SPI Flash File System (LittleFS)
+  Serial.println("LittleFS started. Contents:");
   {
-    Dir dir = SPIFFS.openDir("/");
+    Dir dir = LittleFS.openDir("/");
     while (dir.next()) {                      // List the file system contents
       String fileName = dir.fileName();
       size_t fileSize = dir.fileSize();
@@ -241,7 +242,7 @@ void startServer() { // Start a HTTP server with a file read handler and an uplo
 /*__________________________________________________________SERVER_HANDLERS__________________________________________________________*/
 
 void handleNotFound() { // if the requested file or page doesn't exist, return a 404 not found error
-  if (!handleFileRead(server.uri())) {        // check if the file exists in the flash memory (SPIFFS), if so, send it
+  if (!handleFileRead(server.uri())) {        // check if the file exists in the flash memory (LittleFS), if so, send it
     server.send(404, "text/plain", "404: File Not Found");
   }
 }
@@ -251,10 +252,10 @@ bool handleFileRead(String path) { // send the right file to the client (if it e
   if (path.endsWith("/")) path += "index.html";          // If a folder is requested, send the index file
   String contentType = getContentType(path);             // Get the MIME type
   String pathWithGz = path + ".gz";
-  if (SPIFFS.exists(pathWithGz) || SPIFFS.exists(path)) { // If the file exists, either as a compressed archive, or normal
-    if (SPIFFS.exists(pathWithGz))                         // If there's a compressed version available
+  if (LittleFS.exists(pathWithGz) || LittleFS.exists(path)) { // If the file exists, either as a compressed archive, or normal
+    if (LittleFS.exists(pathWithGz))                         // If there's a compressed version available
       path += ".gz";                                         // Use the compressed verion
-    File file = SPIFFS.open(path, "r");                    // Open the file
+    File file = LittleFS.open(path, "r");                    // Open the file
     size_t sent = server.streamFile(file, contentType);    // Send it to the client
     file.close();                                          // Close the file again
     Serial.println(String("\tSent file: ") + path);
@@ -264,7 +265,7 @@ bool handleFileRead(String path) { // send the right file to the client (if it e
   return false;
 }
 
-void handleFileUpload() { // upload a new file to the SPIFFS
+void handleFileUpload() { // upload a new file to the LittleFS
   HTTPUpload& upload = server.upload();
   String path;
   if (upload.status == UPLOAD_FILE_START) {
@@ -272,11 +273,11 @@ void handleFileUpload() { // upload a new file to the SPIFFS
     if (!path.startsWith("/")) path = "/" + path;
     if (!path.endsWith(".gz")) {                         // The file server always prefers a compressed version of a file
       String pathWithGz = path + ".gz";                  // So if an uploaded file is not compressed, the existing compressed
-      if (SPIFFS.exists(pathWithGz))                     // version of that file must be deleted (if it exists)
-        SPIFFS.remove(pathWithGz);
+      if (LittleFS.exists(pathWithGz))                     // version of that file must be deleted (if it exists)
+        LittleFS.remove(pathWithGz);
     }
     Serial.print("handleFileUpload Name: "); Serial.println(path);
-    fsUploadFile = SPIFFS.open(path, "w");               // Open the file for writing in SPIFFS (create if it doesn't exist)
+    fsUploadFile = LittleFS.open(path, "w");               // Open the file for writing in LittleFS (create if it doesn't exist)
     path = String();
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (fsUploadFile)
@@ -310,6 +311,7 @@ String getContentType(String filename) { // determine the filetype of a given fi
   else if (filename.endsWith(".css")) return "text/css";
   else if (filename.endsWith(".js")) return "application/javascript";
   else if (filename.endsWith(".ico")) return "image/x-icon";
+  else if (filename.endsWith(".png")) return "image/png";
   else if (filename.endsWith(".gz")) return "application/x-gzip";
   return "text/plain";
 }

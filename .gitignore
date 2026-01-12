@@ -8,3 +8,4 @@
 
 # Built Visual Studio Code Extensions
 *.vsix
+src/sensor_logger/mklittlefs.bin
