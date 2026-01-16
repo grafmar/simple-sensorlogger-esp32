@@ -1,74 +1,247 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
-    <title>ESP8266 Temperature Logger</title>
-    <link href='https://fonts.googleapis.com/css?family=Roboto:300' rel='stylesheet' type='text/css'>
-    <link rel="icon" type="image/png" sizes="144x144" href="/favicon-144x144.png">
-    <link rel="icon" type="image/png" sizes="96x96" href="/favicon.ico">
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#00878f">
-    <meta content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' name='viewport'>
-    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+	<meta charset="UTF-8">
+	<title>Simple Sensorlogger ESP8266</title>
+	<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1"></script>
+	<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+	<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+	<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0"></script>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			background: #f4f6f8;
+			margin: 20px;
+		}
+
+		h1 {
+			text-align: center;
+			margin-bottom: 10px;
+		}
+
+		.controls {
+			max-width: 1000px;
+			margin: auto;
+			display: flex;
+			flex-wrap: wrap;
+			gap: 10px;
+			justify-content: center;
+			margin-bottom: 10px;
+		}
+
+		.controls label {
+			cursor: pointer;
+		}
+
+		.chart-container {
+			max-width: 1100px;
+			margin: 30px auto;
+		}
+
+		canvas {
+			background: #fff;
+			border-radius: 8px;
+			padding: 10px;
+			touch-action: none;
+		}
+
+		.hint {
+			text-align: center;
+			font-size: 14px;
+			color: #555;
+			margin-bottom: 10px;
+		}
+
+		.btn-download {
+			display: inline-block;
+			padding: 8px 14px;
+			background: #2b7cff;
+			color: #fff;
+			text-decoration: none;
+			border-radius: 6px;
+			font-weight: bold;
+			transition: background 0.2s;
+		}
+
+		.btn-download:hover {
+			background: #1f5fd6;
+		}
+	</style>
 </head>
 
 <body>
-    <center>
-        <h1>ESP8266 Temperature Logger</h1>
-		<div id="chart_div"></div>
-		<div id="loading">Loading ...</div>
-        <div id="dateselect" style="visibility: hidden;">
-            <div id="date"></div>
-            <button id="prev">&lt;</button>
-            <button id="next">&gt;</button><br>
-            <button id="zoomout">-</button>
-            <button id="zoomin">+</button><br>
-            <button id="reset" style="width: 4.4em;">Reset</button><br>
-            <button id="refresh" style="width: 4.4em;">Refresh</button>
-        </div>
-    </center>
+	<h1>Simple Sensorlogger ESP8266</h1>
 
-    <script src="temperatureGraph.js"></script>
+	<div class="controls">
+		<label><input type="checkbox" data-id="temp1" checked> Temp 1</label>
+		<label><input type="checkbox" data-id="temp2" checked> Temp 2</label>
+		<label><input type="checkbox" data-id="hum1" checked> Humidity 1</label>
+		<label><input type="checkbox" data-id="hum2" checked> Humidity 2</label>
+		<label><input type="checkbox" data-id="co2" checked> CO₂</label>
+		<label><input type="checkbox" data-id="pressure" checked> Pressure</label>
+	</div>
 
-    <style>
-	body {
-	    font-family: 'Roboto', sans-serif;
-	    font-size: 22pt;
-	    margin: 0;
-	    margin-top: 6px;
-	}
+	<div class="hint">
+		🖱️ Mouse wheel = Zoom &nbsp;|&nbsp;
+		⇧ Shift + Drag = Zoom (Selection) &nbsp;|&nbsp;
+		Ctrl + Drag = Pan &nbsp;|&nbsp;
+		Double-click = Reset
+	</div>
 
-	h1 {
-	    font-size: 1.5em;
-	    font-weight: normal;
-	    margin: 0px 0px 12px 0px;
-	}
+	<div class="controls">
+		<a href="data.csv" download class="btn-download">
+			⬇ Download data.csv
+		</a>
+	</div>
 
-	button {
-	    font-size: 14pt;
-	    width: 2em;
-	}
+	<div class="chart-container">
+		<h3>Temperature & Humidity</h3>
+		<canvas id="chartTempHum"></canvas>
+	</div>
 
-	center {
-	    padding: 1em;
-	    margin: auto;
-	    width: 90%;
-	    box-shadow: #777 2px 2px 5px;
-	    box-sizing: border-box;
-	}
+	<div class="chart-container">
+		<h3>CO₂ & Air Pressure</h3>
+		<canvas id="chartCO2Pressure"></canvas>
+	</div>
 
-	#loading {
-		margin-bottom: 12px;
-	}
+	<script>
+		Chart.register(ChartZoom);
 
-	@media only screen and (max-device-width: 700px) {
-	    center {
-		width: 100%;
-		height: 100vh;
-		overflow: auto;
-	    }
-	}
-    </style>
+		/* ================= CSV LOADER ================= */
+		async function loadCSV(url) {
+			const resp = await fetch(url);
+			const text = await resp.text();
+			const rows = text.trim().split('\n');
+
+			const data = { time: [], temp1: [], hum1: [], pressure: [], temp2: [], hum2: [], co2: [] };
+
+			rows.forEach(line => {
+				const [ts, t1, h1, p, t2, h2, co2] = line.split(';');
+
+				data.time.push(new Date(Number(ts) * 1000));
+				data.temp1.push(t1 !== '' ? Number(t1) : NaN);
+				data.hum1.push(h1 !== '' ? Number(h1) : NaN);
+				data.pressure.push(p !== '' ? Number(p) : NaN);
+				data.temp2.push(t2 !== '' ? Number(t2) : NaN);
+				data.hum2.push(h2 !== '' ? Number(h2) : NaN);
+				data.co2.push(co2 !== '' ? Number(co2) : NaN);
+			});
+
+			return data;
+		}
+
+		/* ================= OPTIONS ================= */
+		function baseOptions() {
+			return {
+				responsive: true,
+				interaction: { mode: 'index', intersect: false },
+				plugins: {
+					zoom: {
+						pan: { enabled: true, mode: 'x', modifierKey: 'ctrl' },
+						zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', drag: { enabled: true, modifierKey: 'shift' } }
+					}
+				},
+				scales: {
+					x: {
+						type: 'time',
+						time: {
+							tooltipFormat: 'dd.MM.yyyy HH:mm',
+							//displayFormats: { second:'HH:mm:ss', minute:'HH:mm', hour:'HH:mm', day:'dd.MM.yyyy', month:'dd.MM.yyyy' }
+							displayFormats: { second: 'dd.MM.yyyy\nHH:mm:ss', minute: 'dd.MM.yyyy\nHH:mm', hour: 'dd.MM.yyyy\nHH:mm', day: 'dd.MM.yyyy', month: 'dd.MM.yyyy' }
+						},
+						ticks: {
+							source: 'auto', maxTicksLimit: 10, autoSkip: true, maxRotation: 0,
+							callback: function (value) {
+								const d = new Date(value);
+								return [
+									d.toLocaleDateString('de-CH'), // Zeile 1
+									d.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) // Zeile 2
+								];
+							}
+						}
+					}
+				}
+			};
+		}
+
+		/* ================= INIT CHARTS ================= */
+		let chartTempHum, chartCO2Pressure;
+
+		loadCSV('data.csv').then(data => {
+
+			chartTempHum = new Chart(document.getElementById('chartTempHum'), {
+				type: 'line',
+				data: {
+					labels: data.time,
+					datasets: [
+						{ id: 'temp1', label: 'Temp 1 (°C)', data: data.temp1, borderColor: 'red', yAxisID: 'yT' },
+						{ id: 'temp2', label: 'Temp 2 (°C)', data: data.temp2, borderColor: 'orange', yAxisID: 'yT' },
+						{ id: 'hum1', label: 'Humidity 1 (%)', data: data.hum1, borderColor: 'blue', yAxisID: 'yH' },
+						{ id: 'hum2', label: 'Humidity 2 (%)', data: data.hum2, borderColor: 'cyan', yAxisID: 'yH' }
+					]
+				},
+				options: {
+					...baseOptions(),
+					scales: {
+						x: baseOptions().scales.x,
+						yT: { position: 'left', title: { display: true, text: '°C' } },
+						yH: { position: 'right', title: { display: true, text: '%' }, grid: { drawOnChartArea: false } }
+					}
+				}
+			});
+
+			chartCO2Pressure = new Chart(document.getElementById('chartCO2Pressure'), {
+				type: 'line',
+				data: {
+					labels: data.time,
+					datasets: [
+						{ id: 'co2', label: 'CO₂ (ppm)', data: data.co2, borderColor: 'green', yAxisID: 'yC' },
+						{ id: 'pressure', label: 'Pressure (hPa)', data: data.pressure, borderColor: 'purple', yAxisID: 'yP' }
+					]
+				},
+				options: {
+					...baseOptions(),
+					scales: {
+						x: baseOptions().scales.x,
+						yC: { position: 'left', title: { display: true, text: 'ppm' } },
+						yP: { position: 'right', title: { display: true, text: 'hPa' }, grid: { drawOnChartArea: false } }
+					}
+				}
+			});
+
+			/* ===== Sync Zoom/Pan ===== */
+			function sync(source) {
+				const { min, max } = source.scales.x;
+				[chartTempHum, chartCO2Pressure].forEach(c => {
+					if (c !== source) { c.options.scales.x.min = min; c.options.scales.x.max = max; c.update('none'); }
+				});
+			}
+
+			chartTempHum.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => sync(chart);
+			chartCO2Pressure.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => sync(chart);
+			chartTempHum.options.plugins.zoom.pan.onPanComplete = ({ chart }) => sync(chart);
+			chartCO2Pressure.options.plugins.zoom.pan.onPanComplete = ({ chart }) => sync(chart);
+
+			/* ===== Checkbox Handling ===== */
+			document.querySelectorAll('.controls input').forEach(cb => {
+				cb.onchange = () => {
+					[chartTempHum, chartCO2Pressure].forEach(c => {
+						const ds = c.data.datasets.find(d => d.id === cb.dataset.id);
+						if (ds) { ds.hidden = !cb.checked; c.update(); }
+					});
+				};
+			});
+
+		});
+
+		/* ================= RESET ================= */
+		document.addEventListener('dblclick', () => {
+			chartTempHum.resetZoom();
+			chartCO2Pressure.resetZoom();
+		});
+	</script>
+
 </body>
 
 </html>
