@@ -4,7 +4,6 @@
 #include <ArduinoOTA.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
-#include <FS.h>
 #include <LittleFS.h>
 
 #define ONE_HOUR 3600000UL
@@ -140,12 +139,13 @@ void loop() {
       float temp = tempSensors.getTempCByIndex(0); // Get the temperature from the sensor
       temp = round(temp * 100.0) / 100.0; // round temperature to 2 digits
 
-      Serial.printf("Appending temperature to file: %lu,", actualTime);
+      Serial.printf("Appending temperature to file: %lu;", actualTime);
       Serial.println(temp);
-      File tempLog = LittleFS.open("/temp.csv", "a"); // Write the time and the temperature to the csv file
+      File tempLog = LittleFS.open("/data.csv", "a"); // Write the time and the temperature to the csv file
       tempLog.print(actualTime);
-      tempLog.print(',');
-      tempLog.println(temp);
+      tempLog.print(';');
+      tempLog.print(temp);
+      tempLog.println(";;;;;");
       tempLog.close();
     }
   } else {                                    // If we didn't receive an NTP response yet, send another request
@@ -163,7 +163,7 @@ void startWiFi() { // Try to connect to some given access points. Then wait for 
   WiFiManager wm;
   wm.setTimeout(180);               // 3 Minuten Portal-Zeit
 
-  if (!wm.autoConnect("ESP8266-Setup")) {
+  if (!wm.autoConnect("Sensorlogger-AP")) {
     Serial.println("WiFi failed. Rebooting.");
     delay(3000);
     ESP.reset();
