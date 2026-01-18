@@ -19,6 +19,13 @@ The webpage showing a chart of the sensordata with enabled pan and zoom. The dat
 <p align="center"><img src="doc/webpage.png" alt="Webpage" width="60%"/></p>
 
 
+## Hardware
+The sensors to be used is not yet defined
+
+## Software
+This project is still under construction. At the moment only a random number is logged as a temperature value.
+
+
 ## Installation
 To program the ESP8266 for this project you need the following SW and additional libraries and packages:
 - Arduino IDE (V2.3.7)
