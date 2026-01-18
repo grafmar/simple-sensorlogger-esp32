@@ -1,5 +1,6 @@
 {
- "name": "ESP8266 Temperature Logger",
+ "name": "Simple Sensorlogger ESP8266",
+ "short_name": "Sensorlogger",
  "icons": [
   {
    "src": "\/favicon-144x144.png",
