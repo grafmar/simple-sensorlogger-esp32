@@ -4,19 +4,19 @@ Logs multiple sensor data into local flash. Data can be accessed and displayed a
 ## Overview
 The device consists of an ESP8266 with several sensors connected. This device connects to the WLAN and can be accessed with a PC or smart phone or similar devices.
 
-<img src="doc/device_overview.png" alt="Device Overview" width="60%"/>
+<p align="center"><img src="doc/device_overview.png" alt="Device Overview" width="60%"/></p>
 
 
 The webserver running on the ESP8266 serves the files directly from the filesystem (LittleFS). All the files are ready to use on the filesystem and no active code has to be executed to show the webpage with the sensor data.
 
 On the other hand the sensor sampler samples all the sensors every configured period and stores the data into data.csv on the LittleFS. This file can than be accessed directly from the webpage.
 
-<img src="doc/sw_overview.png" alt="SW Overview" width="60%"/>
+<p align="center"><img src="doc/sw_overview.png" alt="SW Overview" width="60%"/></p>
 
 
-The webpage showing a chart of the sensordata with enabled pan and zoom. The data can be hidden/shown using the checkboxes on the top.
+The webpage showing a chart of the sensordata with enabled pan and zoom. The data can be hidden/shown using the checkboxes on the top. Check the page (here)[https://grafmar.github.io/simple-sensorlogger-esp8266/src/sensor_logger/Uncompressed_data/] in a static version with fake data.
 
-<img src="doc/webpage.png" alt="Webpage" width="60%"/>
+<p align="center"><img src="doc/webpage.png" alt="Webpage" width="60%"/></p>
 
 
 ## Installation
