@@ -112,6 +112,16 @@
 
 		/* ================= CSV LOADER ================= */
 		async function loadCSV(url) {
+			
+			const canvas1 = document.getElementById('chartTempHum');
+			const ctx1 = canvas1.getContext('2d');
+			ctx1.font = "30px Arial";
+			ctx1.fillText("Data loading ...",10,80);
+			const canvas2 = document.getElementById('chartCO2Pressure');
+			const ctx2 = canvas2.getContext('2d');
+			ctx2.font = "30px Arial";
+			ctx2.fillText("Data loading ...",10,80);
+
 			const resp = await fetch(url);
 			const text = await resp.text();
 			const rows = text.trim().split('\n');
@@ -149,7 +159,6 @@
 						type: 'time',
 						time: {
 							tooltipFormat: 'dd.MM.yyyy HH:mm',
-							//displayFormats: { second:'HH:mm:ss', minute:'HH:mm', hour:'HH:mm', day:'dd.MM.yyyy', month:'dd.MM.yyyy' }
 							displayFormats: { second: 'dd.MM.yyyy\nHH:mm:ss', minute: 'dd.MM.yyyy\nHH:mm', hour: 'dd.MM.yyyy\nHH:mm', day: 'dd.MM.yyyy', month: 'dd.MM.yyyy' }
 						},
 						ticks: {
@@ -157,8 +166,8 @@
 							callback: function (value) {
 								const d = new Date(value);
 								return [
-									d.toLocaleDateString('de-CH'), // Zeile 1
-									d.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) // Zeile 2
+									d.toLocaleDateString('de-CH'), // row 1
+									d.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) // row 2
 								];
 							}
 						}
