@@ -14,7 +14,7 @@ On the other hand the sensor sampler samples all the sensors every configured pe
 <p align="center"><img src="doc/sw_overview.png" alt="SW Overview" width="60%"/></p>
 
 
-The webpage showing a chart of the sensordata with enabled pan and zoom. The data can be hidden/shown using the checkboxes on the top. Check the page (here)[https://grafmar.github.io/simple-sensorlogger-esp8266/src/sensor_logger/Uncompressed_data/] in a static version with fake data.
+The webpage showing a chart of the sensordata with enabled pan and zoom. The data can be hidden/shown using the checkboxes on the top. Check the page [here](https://grafmar.github.io/simple-sensorlogger-esp8266/src/sensor_logger/Uncompressed_data/) in a static version with fake data.
 
 <p align="center"><img src="doc/webpage.png" alt="Webpage" width="60%"/></p>
 
@@ -36,13 +36,13 @@ To program the ESP8266 for this project you need the following SW and additional
   - ESP8266WebServer
   - ESP8266mDNS
   - LittleFS
-- LittleFS uploader tool (arduino-littlefs-upload)[https://github.com/earlephilhower/arduino-littlefs-upload?tab=readme-ov-file]:
+- LittleFS uploader tool [arduino-littlefs-upload](https://github.com/earlephilhower/arduino-littlefs-upload?tab=readme-ov-file):
   - Copy the VSIX file to C:\Users\<username>\.arduinoIDE\plugins\ on Windows (you may need to make this directory yourself beforehand). Restart the IDE.
 
 
  tool `esp8266littlefs.jar`:
-  - from (arduino-esp8266littlefs-plugin)[https://github.com/earlephilhower/arduino-esp8266littlefs-plugin/releases]
-  - check (install documentation)[https://randomnerdtutorials.com/install-esp8266-nodemcu-littlefs-arduino/#installing]
+  - from [arduino-esp8266littlefs-plugin](https://github.com/earlephilhower/arduino-esp8266littlefs-plugin/releases)
+  - check [install documentation](https://randomnerdtutorials.com/install-esp8266-nodemcu-littlefs-arduino/#installing)
 
 Open sensor_logger.ino project connect the Wemos D1 R2 mini via USB. Select the right serial port and select the board `LOLIN(WEMOS) D1 R2 & mini`.
 
@@ -57,12 +57,12 @@ To upload the data to the LittleFS you type: `[Ctrl]` + `[Shift]` + `[P]`, then 
 
 
 ## Acknowledgements
-The idea of this project is based on "Examples/16. Data logging/A-Temperature_logger" of the https://github.com/tttapa/ESP8266/tree/master repository. The sensor sampling code and HTML code have been mostly changed and also the chart library has been replaced with chart.js. But that's where the idea and has come from.
+The idea of this project is based on "Examples/16. Data logging/A-Temperature_logger" of the (https://github.com/tttapa/ESP8266/tree/master) repository. The sensor sampling code and HTML code have been mostly changed and also the chart library has been replaced with chart.js. But that's where the idea and has come from.
 
 Parts of this project were created with the assistance of AI tools
 such as ChatGPT and Microsoft Copilot.
 
 ## Licence
-The project is based on (Examples/16. Data logging/A-Temperature_logger)[https://github.com/tttapa/ESP8266/tree/master] which is licenced under GPL v3 and so is this project.
+The project is based on [Examples/16. Data logging/A-Temperature_logger](https://github.com/tttapa/ESP8266/tree/master) which is licenced under GPL v3 and so is this project.
 
 The Javascript libraries chart.js, hammerjs, chartjs-adapter-date-fns and chartjs-plugin-zoom are licenced under MIT licence. These are concatenated into chart_packed.js and than compressed to chart_packed.js.gz.
