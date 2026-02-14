@@ -1,20 +1,22 @@
-# simple-sensorlogger-esp8266
+# simple-sensorlogger-esp32
 Logs multiple sensor data into local flash. Data can be accessed and displayed as graph in the WebUI running on the device.
 
+Previously the idea was to use an ESP8266. But mainly due to the fact that the LOLIN Pico C3 (ESP32-C3) comes with onboard battery charger, we switched. Additionally it comes with an RTC module more RAM and therefore more calculation power for the Webserver. It can also be switched into deep-sleep mode for low power consumption.
+
 ## Overview
-The device consists of an ESP8266 with several sensors connected. This device connects to the WLAN and can be accessed with a PC or smart phone or similar devices.
+The device consists of an ESP32 with several sensors connected. This device connects to the WLAN and can be accessed with a PC or smart phone or similar devices.
 
 <p align="center"><img src="doc/device_overview.png" alt="Device Overview" width="60%"/></p>
 
 
-The webserver running on the ESP8266 serves the files directly from the filesystem (LittleFS). All the files are ready to use on the filesystem and no active code has to be executed to show the webpage with the sensor data.
+The webserver running on the ESP32 serves the files directly from the filesystem (LittleFS). All the files are ready to use on the filesystem and no active code has to be executed to show the webpage with the sensor data.
 
 On the other hand the sensor sampler samples all the sensors every configured period and stores the data into data.csv on the LittleFS. This file can than be accessed directly from the webpage.
 
 <p align="center"><img src="doc/sw_overview.png" alt="SW Overview" width="60%"/></p>
 
 
-The webpage showing a chart of the sensordata with enabled pan and zoom. The data can be hidden/shown using the checkboxes on the top. Check the page [here](https://grafmar.github.io/simple-sensorlogger-esp8266/src/sensor_logger/Uncompressed_data/) in a static version with fake data.
+The webpage showing a chart of the sensordata with enabled pan and zoom. The data can be hidden/shown using the checkboxes on the top. Check the page [here](https://grafmar.github.io/simple-sensorlogger-esp32/src/sensor_logger/Uncompressed_data/) in a static version with fake data.
 
 <p align="center"><img src="doc/webpage.png" alt="Webpage" width="60%"/></p>
 
@@ -27,7 +29,7 @@ This project is still under construction. At the moment only a random number is 
 
 
 ## Installation
-To program the ESP8266 for this project you need the following SW and additional libraries and packages:
+To program the ESP32 for this project you need the following SW and additional libraries and packages:
 - Arduino IDE (V2.3.7)
 - Libraray WiFi Manager (V2.0.17)
 - Board support package `esp8266` by ESP866 Comunity (V3.1.2) providing following libraries:
