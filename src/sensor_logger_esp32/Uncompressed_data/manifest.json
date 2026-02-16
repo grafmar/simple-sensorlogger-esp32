@@ -1,0 +1,12 @@
+{
+ "name": "Simple Sensorlogger ESP8266",
+ "short_name": "Sensorlogger",
+ "icons": [
+  {
+   "src": "\/favicon-144x144.png",
+   "sizes": "144x144",
+   "type": "image\/png",
+   "density": "3.0"
+  }
+ ]
+}
