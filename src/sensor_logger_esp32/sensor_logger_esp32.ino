@@ -55,6 +55,7 @@ byte packetBuffer[NTP_PACKET_SIZE];
 void setup() {
   Serial.begin(115200);
   delay(500);
+  Serial.println("\r\n");
 
   tempSensors.setWaitForConversion(false);
   tempSensors.begin();
@@ -100,8 +101,12 @@ void loop() {
   uint32_t time = getTime();
   if (time) {
     timeUNIX = time;
+    Serial.print("NTP response:\t");
+    Serial.println(timeUNIX);
     lastNTPResponse = millis();
   } else if ((millis() - lastNTPResponse) > 24UL * ONE_HOUR) {
+    Serial.println("More than 24 hours since last NTP response. Rebooting.");
+    Serial.flush();
     ESP.restart();
   }
 
@@ -110,6 +115,7 @@ void loop() {
       tempSensors.requestTemperatures();
       tmpRequested = true;
       prevTemp = currentMillis;
+      Serial.println("Temperature requested");
     }
 
     if (currentMillis - prevTemp > DS_delay && tmpRequested) {
@@ -163,6 +169,16 @@ void startLittleFS() {
   if (!LittleFS.begin(true)) {
     Serial.println("LittleFS Mount Failed");
   }
+  Serial.println("LittleFS started. Contents:?");
+/* {
+    Dir dir = LittleFS.openDir("/");
+    while (dir.next()) {                      // List the file system contents
+      String fileName = dir.fileName();
+      size_t fileSize = dir.fileSize();
+      Serial.printf("\tFS File: %s, size: %s\r\n", fileName.c_str(), formatBytes(fileSize).c_str());
+    }
+    Serial.printf("\n");
+  }*/
 }
 
 void startMDNS() {
@@ -178,6 +194,7 @@ void startServer() {
 
   server.onNotFound(handleNotFound);
   server.begin();
+  Serial.println("HTTP server started.");
 }
 
 /*__________________________________________________________SERVER_HANDLERS__________________________________________________________*/
@@ -187,14 +204,21 @@ void handleNotFound() {
     server.send(404, "text/plain", "404");
 }
 
-bool handleFileRead(String path) {
-  if (path.endsWith("/")) path += "index.html";
-  if (LittleFS.exists(path)) {
-    File file = LittleFS.open(path, "r");
-    server.streamFile(file, getContentType(path));
-    file.close();
+bool handleFileRead(String path) { // send the right file to the client (if it exists)
+  Serial.println("handleFileRead: " + path);
+  if (path.endsWith("/")) path += "index.html";          // If a folder is requested, send the index file
+  String contentType = getContentType(path);             // Get the MIME type
+  String pathWithGz = path + ".gz";
+  if (LittleFS.exists(pathWithGz) || LittleFS.exists(path)) { // If the file exists, either as a compressed archive, or normal
+    if (LittleFS.exists(pathWithGz))                         // If there's a compressed version available
+      path += ".gz";                                         // Use the compressed verion
+    File file = LittleFS.open(path, "r");                    // Open the file
+    size_t sent = server.streamFile(file, contentType);    // Send it to the client
+    file.close();                                          // Close the file again
+    Serial.println(String("\tSent file: ") + path);
     return true;
   }
+  Serial.println(String("\tFile Not Found: ") + path);   // If the file doesn't exist, return false
   return false;
 }
 
@@ -214,8 +238,11 @@ void handleFileUpload() {
 
 String getContentType(String filename) {
   if (filename.endsWith(".html")) return "text/html";
-  if (filename.endsWith(".css")) return "text/css";
-  if (filename.endsWith(".js")) return "application/javascript";
+  else if (filename.endsWith(".css")) return "text/css";
+  else if (filename.endsWith(".js")) return "application/javascript";
+  else if (filename.endsWith(".ico")) return "image/x-icon";
+  else if (filename.endsWith(".png")) return "image/png";
+  else if (filename.endsWith(".gz")) return "application/x-gzip";
   return "text/plain";
 }
 
