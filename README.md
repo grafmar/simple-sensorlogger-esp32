@@ -27,20 +27,26 @@ The sensors to be used is not yet defined
 ## Software
 This project is still under construction. At the moment only a random number is logged as a temperature value.
 
+### Problems with Async webserver: ESP core 3.x.x is not compatible with the libraries. Had also problem after altering the library:
+
+Altered lines in `C:\Users\<user>\Documents\Arduino\libraries\ESPAsyncWebServer\src\WebAuthentication.cpp` Line 74 and following:
+- `mbedtls_md5_starts_ret` with `mbedtls_md5_starts`
+- `mbedtls_md5_update_ret` with `mbedtls_md5_update`
+- `mbedtls_md5_finish_ret` with `mbedtls_md5_finish`
+
+In files `AsyncEventSource.cpp` and `AsyncWebSocket.cpp` replace `ets_printf` with `printf`.
 
 ## Installation
 To program the ESP32 for this project you need the following SW and additional libraries and packages:
 - Arduino IDE (V2.3.7)
-- Libraray WiFi Manager (V2.0.17)
-- Board support package `esp8266` by ESP866 Comunity (V3.1.2) providing following libraries:
-  - ESP8266WiFi
-  - ESP8266WiFiUdp
-  - ESP8266WebServer
-  - ESP8266mDNS
-  - LittleFS
+- ESP Async Webserver (3.10.0) by ESP32Async
+- ESP Async TCP (2.0.0) by ESP32Async
+- Board support package `esp32` by Espressif Systems (V3.3.6)
+- LittleFS_esp32 by lorol (1.0.6)
+
+
 - LittleFS uploader tool [arduino-littlefs-upload](https://github.com/earlephilhower/arduino-littlefs-upload?tab=readme-ov-file):
   - Copy the VSIX file to C:\Users\<username>\.arduinoIDE\plugins\ on Windows (you may need to make this directory yourself beforehand). Restart the IDE.
-
 
  tool `esp8266littlefs.jar`:
   - from [arduino-esp8266littlefs-plugin](https://github.com/earlephilhower/arduino-esp8266littlefs-plugin/releases)
