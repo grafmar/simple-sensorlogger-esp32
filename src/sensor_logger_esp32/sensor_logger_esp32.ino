@@ -1,23 +1,28 @@
 #include <WiFi.h>
-#include <WebServer.h>
+#include <ESPAsyncWebServer.h>
+//#include "ESPAsyncWebServer.h"
+#include <AsyncTCP.h>
 #include <LittleFS.h>
 #include <Preferences.h>
 #include <time.h>
 
 /*
-  =========================
-  Konfiguration
-  =========================
+  ============================================================================
+    Configuration
+  ============================================================================
 */
 
-#define SETUP_PIN 9          // Setup-Taster (LOW = Setup-Modus)
-#define ONE_MINUTE 60000UL
-#define WIFI_TIMEOUT 15000UL
+#define SETUP_PIN          9       // LOW = force WiFi setup portal
+#define WIFI_TIMEOUT       15000   // ms
+#define LOG_INTERVAL_MS    60000   // 1 minute logging interval
+
+#define MAX_CHUNKS         16
+#define CHUNK_SIZE_BYTES  32768   // 32 KB per log chunk
 
 /*
-  =========================
-  Dummy Temperatursensor
-  =========================
+  ============================================================================
+    Dummy temperature sensor (replace later with real sensor)
+  ============================================================================
 */
 
 class TempSensor {
@@ -34,35 +39,34 @@ public:
 TempSensor tempSensors;
 
 /*
-  =========================
-  Globale Objekte
-  =========================
+  ============================================================================
+    Global objects
+  ============================================================================
 */
 
-WebServer server(80);
+AsyncWebServer server(80);
 Preferences prefs;
 
 /*
-  =========================
-  Zeitsteuerung
-  =========================
+  ============================================================================
+    Logging state
+  ============================================================================
 */
 
-const unsigned long intervalTemp = ONE_MINUTE;
-unsigned long prevTemp = 0;
-bool tmpRequested = false;
-const unsigned long DS_delay = 750;
+unsigned long lastLogTime = 0;
+int currentChunk = 0;
 
 /*
-  =========================
-  Setup
-  =========================
+  ============================================================================
+    Setup
+  ============================================================================
 */
 
 void setup() {
   Serial.begin(115200);
   delay(500);
-  Serial.println("\n--- ESP32-C3 Sensorlogger (RTC + SNTP) ---");
+
+  Serial.println("\n--- ESP32-C3 Sensor Logger (Async + RTC + Rolling Logs) ---");
 
   pinMode(SETUP_PIN, INPUT_PULLUP);
 
@@ -72,53 +76,44 @@ void setup() {
   listFilesSerial();
 
   if (!startWiFi()) {
-    startConfigPortal();   // blockierend bis WLAN gesetzt
+    startConfigPortal();   // blocking until WiFi configured
   }
 
-  startSNTP();             // <<< echte RTC + SNTP
-  waitForTime();           // <<< warten bis Zeit gültig
+  startSNTP();
+  waitForTime();
+
+  detectCurrentChunk();
 
   startServer();
 }
 
 /*
-  =========================
-  Loop
-  =========================
+  ============================================================================
+    Main loop
+  ============================================================================
 */
 
 void loop() {
   unsigned long now = millis();
 
-  if (now - prevTemp > intervalTemp) {
-    tempSensors.requestTemperatures();
-    tmpRequested = true;
-    prevTemp = now;
-  }
-
-  if (tmpRequested && now - prevTemp > DS_delay) {
-    tmpRequested = false;
+  if (now - lastLogTime > LOG_INTERVAL_MS) {
+    lastLogTime = now;
 
     float temp = tempSensors.getTempCByIndex(0);
     temp = round(temp * 100) / 100.0;
 
-    // Unix-Time direkt aus RTC (GMT/UTC)
-    time_t ts = time(nullptr);
+    time_t ts = time(nullptr);  // RTC time (Unix UTC)
 
-    File f = LittleFS.open("/data.csv", "a");
-    f.printf("%lu;%.2f;;;;;\n", (uint32_t)ts, temp);
-    f.close();
+    writeLog(ts, temp);
 
     Serial.printf("LOG: %lu ; %.2f\n", (uint32_t)ts, temp);
   }
-
-  server.handleClient();
 }
 
 /*
-  =========================
-  WLAN Management
-  =========================
+  ============================================================================
+    WiFi handling
+  ============================================================================
 */
 
 bool startWiFi() {
@@ -127,7 +122,6 @@ bool startWiFi() {
   String pass = prefs.getString("pass", "");
   prefs.end();
 
-  // Setup erzwingen per Taster oder wenn keine Daten vorhanden
   if (ssid == "" || digitalRead(SETUP_PIN) == LOW) return false;
 
   Serial.print("Connecting to: ");
@@ -148,9 +142,9 @@ bool startWiFi() {
 }
 
 /*
-  =========================
-  Setup-Portal (AP + WLAN Scan)
-  =========================
+  ============================================================================
+    WiFi setup portal
+  ============================================================================
 */
 
 void startConfigPortal() {
@@ -160,9 +154,10 @@ void startConfigPortal() {
   Serial.print("AP IP: ");
   Serial.println(WiFi.softAPIP());
 
-  server.on("/", HTTP_GET, []() {
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+
     String html =
-      "<h2>WLAN Setup</h2>"
+      "<h2>WiFi Setup</h2>"
       "<form action='/save' method='POST'>"
       "SSID:<br><select name='s'>";
 
@@ -171,146 +166,205 @@ void startConfigPortal() {
       html += "<option>" + WiFi.SSID(i) + "</option>";
 
     html +=
-      "</select><br>Passwort:<br>"
+      "</select><br>Password:<br>"
       "<input name='p' type='password'><br><br>"
-      "<button>Speichern</button></form>";
+      "<button>Save</button></form>";
 
-    server.send(200, "text/html", html);
+    request->send(200, "text/html", html);
   });
 
-  server.on("/save", HTTP_POST, []() {
+  server.on("/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+
     prefs.begin("wifi", false);
-    prefs.putString("ssid", server.arg("s"));
-    prefs.putString("pass", server.arg("p"));
+    prefs.putString("ssid", request->arg("s"));
+    prefs.putString("pass", request->arg("p"));
     prefs.end();
 
-    server.send(200, "text/plain", "Gespeichert. Reboot...");
+    request->send(200, "text/plain", "Saved. Rebooting...");
     delay(1500);
     ESP.restart();
   });
 
   server.begin();
 
-  // Blockierend im Setup-Modus
-  while (true) server.handleClient();
+  while (true) delay(100);
 }
 
 /*
-  =========================
-  RTC + SNTP
-  =========================
+  ============================================================================
+    SNTP + RTC
+  ============================================================================
 */
 
 void startSNTP() {
-  // GMT / UTC → offset = 0, daylight = 0
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  Serial.println("SNTP gestartet (UTC / GMT)");
+  Serial.println("SNTP started (UTC)");
 }
 
 void waitForTime() {
-  Serial.print("Warte auf Zeit-Sync");
+  Serial.print("Waiting for time sync");
   time_t now;
+
   do {
     delay(500);
     Serial.print(".");
     now = time(nullptr);
-  } while (now < 1700000000);   // grobe Plausibilitätsgrenze (~2023)
+  } while (now < 1700000000);
 
-  Serial.println("\nZeit synchronisiert!");
-  Serial.print("Unix-Time: ");
-  Serial.println((uint32_t)now);
+  Serial.println("\nTime synchronized.");
 }
 
 /*
-  =========================
-  LittleFS
-  =========================
+  ============================================================================
+    LittleFS
+  ============================================================================
 */
 
 void startLittleFS() {
   if (!LittleFS.begin(true)) {
-    Serial.println("LittleFS Mount Failed!");
+    Serial.println("LittleFS mount failed!");
     ESP.restart();
   }
 }
 
 void listFilesSerial() {
-  Serial.println("\nLittleFS Inhalt:");
+  Serial.println("\nLittleFS content:");
   File root = LittleFS.open("/");
-  File file = root.openNextFile();
-  while (file) {
-    Serial.printf("  %s (%d bytes)\n", file.name(), file.size());
-    file = root.openNextFile();
+  File f = root.openNextFile();
+  while (f) {
+    Serial.printf("  %s (%d bytes)\n", f.name(), f.size());
+    f = root.openNextFile();
   }
 }
 
 /*
-  =========================
-  HTTP Server
-  =========================
+  ============================================================================
+    Rolling log handling
+  ============================================================================
+*/
+
+void detectCurrentChunk() {
+  currentChunk = 0;
+
+  for (int i = 0; i < MAX_CHUNKS; i++) {
+    String path = "/log_" + String(i) + ".csv";
+    if (!LittleFS.exists(path)) break;
+
+    File f = LittleFS.open(path, "r");
+    if (f.size() < CHUNK_SIZE_BYTES) {
+      currentChunk = i;
+      f.close();
+      return;
+    }
+    f.close();
+  }
+
+  currentChunk = MAX_CHUNKS - 1;
+}
+
+void rotateLogs() {
+  Serial.println("Rotating log chunks");
+
+  if (LittleFS.exists("/log_0.csv")) LittleFS.remove("/log_0.csv");
+
+  for (int i = 1; i < MAX_CHUNKS; i++) {
+    String oldName = "/log_" + String(i) + ".csv";
+    String newName = "/log_" + String(i - 1) + ".csv";
+    if (LittleFS.exists(oldName)) LittleFS.rename(oldName, newName);
+  }
+
+  currentChunk = MAX_CHUNKS - 1;
+}
+
+void writeLog(time_t ts, float temp) {
+  String path = "/log_" + String(currentChunk) + ".csv";
+
+  if (LittleFS.exists(path)) {
+    File f = LittleFS.open(path, "r");
+    if (f.size() > CHUNK_SIZE_BYTES) {
+      f.close();
+      rotateLogs();
+      path = "/log_" + String(currentChunk) + ".csv";
+    } else {
+      f.close();
+    }
+  }
+
+  File f = LittleFS.open(path, "a");
+  f.printf("%lu;%.2f;;;;;\n", (uint32_t)ts, temp);
+  f.close();
+}
+
+/*
+  ============================================================================
+    Async Web Server
+  ============================================================================
 */
 
 void startServer() {
 
-  // HTML Datei-Liste
-  server.on("/list", HTTP_GET, []() {
-    String html = "<h2>Dateien</h2><ul>";
+  server.on("/list", HTTP_GET, [](AsyncWebServerRequest *request) {
 
+    String html = "<h2>Files</h2><ul>";
     File root = LittleFS.open("/");
-    File file = root.openNextFile();
+    File f = root.openNextFile();
 
-    while (file) {
-      html += "<li><a href='" + String(file.name()) + "'>" +
-              String(file.name()) + "</a> (" + String(file.size()) + ")</li>";
-      file = root.openNextFile();
+    while (f) {
+      html += "<li>" + String(f.name()) +
+              " (" + String(f.size()) + ")</li>";
+      f = root.openNextFile();
     }
 
     html += "</ul>";
-    server.send(200, "text/html", html);
+    request->send(200, "text/html", html);
   });
 
-  server.onNotFound(handleNotFound);
+  server.on("/download", HTTP_GET, handleDownload);
+
+  server.serveStatic("/", LittleFS, "/")
+        .setDefaultFile("index.html");
+
+  server.onNotFound([](AsyncWebServerRequest *request) {
+
+    String path = request->url();
+    if (path.endsWith("/")) path += "index.html";
+
+    String gzPath = path + ".gz";
+
+    if (LittleFS.exists(gzPath)) {
+      request->send(LittleFS, gzPath, String(), true);
+      return;
+    }
+
+    request->send(404, "text/plain", "404");
+  });
+
   server.begin();
+  Serial.println("Async HTTP server started.");
 }
 
 /*
-  =========================
-  File Handling
-  =========================
+  ============================================================================
+    Download handler (streams all chunks into one CSV)
+  ============================================================================
 */
 
-void handleNotFound() {
-  if (!handleFileRead(server.uri()))
-    server.send(404, "text/plain", "404");
-}
+void handleDownload(AsyncWebServerRequest *request) {
 
-bool handleFileRead(String path) {
-  if (path.endsWith("/")) path += "index.html";
+  AsyncResponseStream *response =
+      request->beginResponseStream("text/csv");
 
-  String contentType = getContentType(path);
-  String gzPath = path + ".gz";
+  response->addHeader("Content-Disposition",
+                       "attachment; filename=\"data.csv\"");
 
-  // gzip bevorzugen
-  if (LittleFS.exists(gzPath)) path = gzPath;
-  if (!LittleFS.exists(path)) return false;
+  for (int i = 0; i < MAX_CHUNKS; i++) {
+    String path = "/log_" + String(i) + ".csv";
+    if (!LittleFS.exists(path)) continue;
 
-  File file = LittleFS.open(path, "r");
-  server.streamFile(file, contentType);
-  file.close();
-  return true;
-}
+    File f = LittleFS.open(path, "r");
+    while (f.available()) response->write(f.read());
+    f.close();
+  }
 
-/*
-  =========================
-  Helper
-  =========================
-*/
-
-String getContentType(String filename) {
-  if (filename.endsWith(".html")) return "text/html";
-  if (filename.endsWith(".css")) return "text/css";
-  if (filename.endsWith(".js")) return "application/javascript";
-  if (filename.endsWith(".png")) return "image/png";
-  if (filename.endsWith(".gz")) return "application/x-gzip";
-  return "text/plain";
+  request->send(response);
 }
