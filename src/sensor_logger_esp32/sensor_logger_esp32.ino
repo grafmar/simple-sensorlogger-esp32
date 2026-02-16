@@ -318,7 +318,7 @@ void startServer() {
     request->send(200, "text/html", html);
   });
 
-  server.on("/download", HTTP_GET, handleDownload);
+  server.on("/data.csv", HTTP_GET, handleDownload);
 
   server.serveStatic("/", LittleFS, "/")
         .setDefaultFile("index.html");
