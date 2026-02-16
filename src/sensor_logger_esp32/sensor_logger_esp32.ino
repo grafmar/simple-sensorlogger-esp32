@@ -1,83 +1,62 @@
 #include <WiFi.h>
-#include <WiFiManager.h>
 #include <WiFiUdp.h>
-#include <ArduinoOTA.h>
 #include <WebServer.h>
-#include <ESPmDNS.h>
 #include <LittleFS.h>
+#include <Preferences.h>
+
+/*
+  =========================
+  Konfiguration
+  =========================
+*/
+
+// Setup-Taster: beim Boot gedrückt halten → WLAN Setup AP starten
+#define SETUP_PIN 9     // GPIO anpassen falls nötig
 
 #define ONE_HOUR 3600000UL
+#define WIFI_TIMEOUT 15000UL
 
-// Dummy Klasse für den TempSensor
+/*
+  =========================
+  Dummy Temperatursensor
+  =========================
+*/
+
 class TempSensor {
 public:
-  TempSensor();
-  ~TempSensor();
-  void setWaitForConversion(bool wait);
-  void begin();
-  uint8_t getDeviceCount();
-  void requestTemperatures();
-  float getTempCByIndex(uint8_t index);
-
-private:
-  bool m_wait;
+  TempSensor() {}
+  void setWaitForConversion(bool) {}
+  void begin() {}
+  uint8_t getDeviceCount() { return 1; }
+  void requestTemperatures() {}
+  float getTempCByIndex(uint8_t) {
+    return random(200, 250) / 10.0;
+  }
 };
-
-TempSensor::TempSensor(): m_wait(true){}
-TempSensor::~TempSensor(){}
-void TempSensor::setWaitForConversion(bool wait) { m_wait = wait; }
-void TempSensor::begin() {}
-uint8_t TempSensor::getDeviceCount() { return 1; }
-void TempSensor::requestTemperatures() {}
-float TempSensor::getTempCByIndex(uint8_t index) {
-  return random(200, 250) / 10.0;
-}
 
 TempSensor tempSensors;
 
+/*
+  =========================
+  Globale Objekte
+  =========================
+*/
+
 WebServer server(80);
-File fsUploadFile;
-
-const char *OTAName = "ESP32-C3";
-const char *OTAPassword = "esp32c3";
-
-const char* mdnsName = "esp32c3";
-
 WiFiUDP UDP;
+Preferences prefs;
+
 IPAddress timeServerIP;
 const char* ntpServerName = "time.nist.gov";
 
 const int NTP_PACKET_SIZE = 48;
 byte packetBuffer[NTP_PACKET_SIZE];
 
-/*__________________________________________________________SETUP__________________________________________________________*/
-
-void setup() {
-  Serial.begin(115200);
-  delay(500);
-  Serial.println("\r\n");
-
-  tempSensors.setWaitForConversion(false);
-  tempSensors.begin();
-
-  if (tempSensors.getDeviceCount() == 0) {
-    Serial.println("No temperature sensor found. Rebooting.");
-    delay(3000);
-    ESP.restart();
-  }
-
-  startWiFi();
-  startOTA();
-  startLittleFS();
-  startMDNS();
-  startServer();
-  startUDP();
-
-  WiFi.hostByName(ntpServerName, timeServerIP);
-  sendNTPpacket(timeServerIP);
-}
-
-/*__________________________________________________________LOOP__________________________________________________________*/
+/*
+  =========================
+  Zeitsteuerung
+  =========================
+*/
 
 const unsigned long intervalNTP = ONE_HOUR;
 unsigned long prevNTP = 0;
@@ -90,172 +69,251 @@ const unsigned long DS_delay = 750;
 
 uint32_t timeUNIX = 0;
 
-void loop() {
-  unsigned long currentMillis = millis();
+/*
+  =========================
+  Setup
+  =========================
+*/
 
-  if (currentMillis - prevNTP > intervalNTP) {
-    prevNTP = currentMillis;
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+  Serial.println("\n--- ESP32-C3 Sensorlogger ---");
+
+  pinMode(SETUP_PIN, INPUT_PULLUP);
+
+  tempSensors.begin();
+
+  startLittleFS();
+  listFilesSerial();
+
+  if (!startWiFi()) {
+    startConfigPortal();
+  }
+
+  startServer();
+  startUDP();
+
+  WiFi.hostByName(ntpServerName, timeServerIP);
+  sendNTPpacket(timeServerIP);
+}
+
+/*
+  =========================
+  Loop
+  =========================
+*/
+
+void loop() {
+  unsigned long now = millis();
+
+  if (now - prevNTP > intervalNTP) {
+    prevNTP = now;
     sendNTPpacket(timeServerIP);
   }
 
-  uint32_t time = getTime();
-  if (time) {
-    timeUNIX = time;
-    Serial.print("NTP response:\t");
-    Serial.println(timeUNIX);
+  uint32_t t = getTime();
+  if (t) {
+    timeUNIX = t;
     lastNTPResponse = millis();
-  } else if ((millis() - lastNTPResponse) > 24UL * ONE_HOUR) {
-    Serial.println("More than 24 hours since last NTP response. Rebooting.");
-    Serial.flush();
-    ESP.restart();
   }
 
-  if (timeUNIX != 0) {
-    if (currentMillis - prevTemp > intervalTemp) {
-      tempSensors.requestTemperatures();
-      tmpRequested = true;
-      prevTemp = currentMillis;
-      Serial.println("Temperature requested");
-    }
+  if (timeUNIX && now - prevTemp > intervalTemp) {
+    tempSensors.requestTemperatures();
+    tmpRequested = true;
+    prevTemp = now;
+  }
 
-    if (currentMillis - prevTemp > DS_delay && tmpRequested) {
-      tmpRequested = false;
+  if (tmpRequested && now - prevTemp > DS_delay) {
+    tmpRequested = false;
+    float temp = tempSensors.getTempCByIndex(0);
+    temp = round(temp * 100) / 100.0;
 
-      uint32_t actualTime = timeUNIX + (currentMillis - lastNTPResponse) / 1000;
-      float temp = tempSensors.getTempCByIndex(0);
-      temp = round(temp * 100.0) / 100.0;
+    uint32_t ts = timeUNIX + (millis() - lastNTPResponse) / 1000;
 
-      File tempLog = LittleFS.open("/data.csv", "a");
-      tempLog.printf("%lu;%.2f;;;;;\n", actualTime, temp);
-      tempLog.close();
-    }
+    File f = LittleFS.open("/data.csv", "a");
+    f.printf("%lu;%.2f;;;;;\n", ts, temp);
+    f.close();
   }
 
   server.handleClient();
-  ArduinoOTA.handle();
 }
 
-/*__________________________________________________________SETUP_FUNCTIONS__________________________________________________________*/
+/*
+  =========================
+  WLAN Management
+  =========================
+*/
 
-void startWiFi() {
-  WiFi.mode(WIFI_STA);
+bool startWiFi() {
+  prefs.begin("wifi", true);
+  String ssid = prefs.getString("ssid", "");
+  String pass = prefs.getString("pass", "");
+  prefs.end();
 
-  WiFiManager wm;
-  wm.setTimeout(180);
+  if (ssid == "" || digitalRead(SETUP_PIN) == LOW) return false;
 
-  if (!wm.autoConnect("Sensorlogger-AP")) {
-    ESP.restart();
+  Serial.print("Connecting to: ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid.c_str(), pass.c_str());
+
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < WIFI_TIMEOUT) {
+    delay(200);
   }
+
+  if (WiFi.status() != WL_CONNECTED) return false;
 
   Serial.print("IP: ");
   Serial.println(WiFi.localIP());
+  return true;
 }
 
-void startUDP() {
-  UDP.begin(123);
+/*
+  Setup Access Point + WLAN Scan + Mini-Konfig-Portal
+*/
+
+void startConfigPortal() {
+  WiFi.softAP("Sensorlogger-Setup");
+
+  Serial.println("\nSETUP MODE");
+  Serial.print("AP IP: ");
+  Serial.println(WiFi.softAPIP());
+
+  server.on("/", HTTP_GET, []() {
+    String html =
+      "<h2>WLAN Setup</h2>"
+      "<form action='/save' method='POST'>"
+      "SSID:<br><select name='s'>";
+
+    int n = WiFi.scanNetworks();
+    for (int i = 0; i < n; i++)
+      html += "<option>" + WiFi.SSID(i) + "</option>";
+
+    html +=
+      "</select><br>Passwort:<br>"
+      "<input name='p' type='password'><br><br>"
+      "<button>Speichern</button></form>";
+
+    server.send(200, "text/html", html);
+  });
+
+  server.on("/save", HTTP_POST, []() {
+    prefs.begin("wifi", false);
+    prefs.putString("ssid", server.arg("s"));
+    prefs.putString("pass", server.arg("p"));
+    prefs.end();
+
+    server.send(200, "text/plain", "Gespeichert. Reboot...");
+    delay(1500);
+    ESP.restart();
+  });
+
+  server.begin();
+
+  while (true) server.handleClient();
 }
 
-void startOTA() {
-  ArduinoOTA.setHostname(OTAName);
-  ArduinoOTA.setPassword(OTAPassword);
-
-  ArduinoOTA.onStart([]() { Serial.println("OTA Start"); });
-  ArduinoOTA.onEnd([]() { Serial.println("OTA End"); });
-
-  ArduinoOTA.begin();
-}
+/*
+  =========================
+  LittleFS
+  =========================
+*/
 
 void startLittleFS() {
   if (!LittleFS.begin(true)) {
-    Serial.println("LittleFS Mount Failed");
+    Serial.println("LittleFS Mount Failed!");
+    ESP.restart();
   }
-  Serial.println("LittleFS started. Contents:?");
-/* {
-    Dir dir = LittleFS.openDir("/");
-    while (dir.next()) {                      // List the file system contents
-      String fileName = dir.fileName();
-      size_t fileSize = dir.fileSize();
-      Serial.printf("\tFS File: %s, size: %s\r\n", fileName.c_str(), formatBytes(fileSize).c_str());
-    }
-    Serial.printf("\n");
-  }*/
 }
 
-void startMDNS() {
-  if (!MDNS.begin(mdnsName)) {
-    Serial.println("Error starting mDNS");
+void listFilesSerial() {
+  Serial.println("\nLittleFS Inhalt:");
+  File root = LittleFS.open("/");
+  File file = root.openNextFile();
+  while (file) {
+    Serial.printf("  %s (%d bytes)\n", file.name(), file.size());
+    file = root.openNextFile();
   }
 }
+
+/*
+  =========================
+  HTTP Server
+  =========================
+*/
 
 void startServer() {
-  server.on("/edit.html", HTTP_POST, []() {
-    server.send(200, "text/plain", "");
-  }, handleFileUpload);
+
+  // HTML Datei-Liste
+  server.on("/list", HTTP_GET, []() {
+    String html = "<h2>Dateien</h2><ul>";
+
+    File root = LittleFS.open("/");
+    File file = root.openNextFile();
+
+    while (file) {
+      html += "<li><a href='" + String(file.name()) + "'>" +
+              String(file.name()) + "</a> (" + String(file.size()) + ")</li>";
+      file = root.openNextFile();
+    }
+
+    html += "</ul>";
+    server.send(200, "text/html", html);
+  });
 
   server.onNotFound(handleNotFound);
   server.begin();
-  Serial.println("HTTP server started.");
 }
 
-/*__________________________________________________________SERVER_HANDLERS__________________________________________________________*/
+/*
+  =========================
+  File Handling
+  =========================
+*/
 
 void handleNotFound() {
   if (!handleFileRead(server.uri()))
     server.send(404, "text/plain", "404");
 }
 
-bool handleFileRead(String path) { // send the right file to the client (if it exists)
-  Serial.println("handleFileRead: " + path);
-  if (path.endsWith("/")) path += "index.html";          // If a folder is requested, send the index file
-  String contentType = getContentType(path);             // Get the MIME type
-  String pathWithGz = path + ".gz";
-  if (LittleFS.exists(pathWithGz) || LittleFS.exists(path)) { // If the file exists, either as a compressed archive, or normal
-    if (LittleFS.exists(pathWithGz))                         // If there's a compressed version available
-      path += ".gz";                                         // Use the compressed verion
-    File file = LittleFS.open(path, "r");                    // Open the file
-    size_t sent = server.streamFile(file, contentType);    // Send it to the client
-    file.close();                                          // Close the file again
-    Serial.println(String("\tSent file: ") + path);
-    return true;
-  }
-  Serial.println(String("\tFile Not Found: ") + path);   // If the file doesn't exist, return false
-  return false;
+bool handleFileRead(String path) {
+  if (path.endsWith("/")) path += "index.html";
+
+  String contentType = getContentType(path);
+  String gzPath = path + ".gz";
+
+  if (LittleFS.exists(gzPath)) path = gzPath;
+  if (!LittleFS.exists(path)) return false;
+
+  File file = LittleFS.open(path, "r");
+  server.streamFile(file, contentType);
+  file.close();
+  return true;
 }
 
-void handleFileUpload() {
-  HTTPUpload& upload = server.upload();
+/*
+  =========================
+  UDP + NTP
+  =========================
+*/
 
-  if (upload.status == UPLOAD_FILE_START) {
-    fsUploadFile = LittleFS.open("/" + upload.filename, "w");
-  } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (fsUploadFile) fsUploadFile.write(upload.buf, upload.currentSize);
-  } else if (upload.status == UPLOAD_FILE_END) {
-    if (fsUploadFile) fsUploadFile.close();
-  }
-}
-
-/*__________________________________________________________HELPER__________________________________________________________*/
-
-String getContentType(String filename) {
-  if (filename.endsWith(".html")) return "text/html";
-  else if (filename.endsWith(".css")) return "text/css";
-  else if (filename.endsWith(".js")) return "application/javascript";
-  else if (filename.endsWith(".ico")) return "image/x-icon";
-  else if (filename.endsWith(".png")) return "image/png";
-  else if (filename.endsWith(".gz")) return "application/x-gzip";
-  return "text/plain";
+void startUDP() {
+  UDP.begin(123);
 }
 
 unsigned long getTime() {
-  if (UDP.parsePacket() == 0) return 0;
+  if (!UDP.parsePacket()) return 0;
 
   UDP.read(packetBuffer, NTP_PACKET_SIZE);
-  uint32_t NTPTime = (packetBuffer[40] << 24) |
-                     (packetBuffer[41] << 16) |
-                     (packetBuffer[42] << 8) |
-                     packetBuffer[43];
 
-  return NTPTime - 2208988800UL;
+  uint32_t ntp = (packetBuffer[40] << 24) |
+                 (packetBuffer[41] << 16) |
+                 (packetBuffer[42] << 8) |
+                 packetBuffer[43];
+
+  return ntp - 2208988800UL;
 }
 
 void sendNTPpacket(IPAddress& address) {
@@ -265,4 +323,19 @@ void sendNTPpacket(IPAddress& address) {
   UDP.beginPacket(address, 123);
   UDP.write(packetBuffer, NTP_PACKET_SIZE);
   UDP.endPacket();
+}
+
+/*
+  =========================
+  Helper
+  =========================
+*/
+
+String getContentType(String filename) {
+  if (filename.endsWith(".html")) return "text/html";
+  if (filename.endsWith(".css")) return "text/css";
+  if (filename.endsWith(".js")) return "application/javascript";
+  if (filename.endsWith(".png")) return "image/png";
+  if (filename.endsWith(".gz")) return "application/x-gzip";
+  return "text/plain";
 }
