@@ -1,8 +1,8 @@
 #include <WiFi.h>
-#include <WiFiUdp.h>
 #include <WebServer.h>
 #include <LittleFS.h>
 #include <Preferences.h>
+#include <time.h>
 
 /*
   =========================
@@ -10,10 +10,8 @@
   =========================
 */
 
-// Setup-Taster: beim Boot gedrückt halten → WLAN Setup AP starten
-#define SETUP_PIN 9     // GPIO anpassen falls nötig
-
-#define ONE_HOUR 3600000UL
+#define SETUP_PIN 9          // Setup-Taster (LOW = Setup-Modus)
+#define ONE_MINUTE 60000UL
 #define WIFI_TIMEOUT 15000UL
 
 /*
@@ -24,9 +22,8 @@
 
 class TempSensor {
 public:
-  TempSensor() {}
-  void setWaitForConversion(bool) {}
   void begin() {}
+  void setWaitForConversion(bool) {}
   uint8_t getDeviceCount() { return 1; }
   void requestTemperatures() {}
   float getTempCByIndex(uint8_t) {
@@ -43,14 +40,7 @@ TempSensor tempSensors;
 */
 
 WebServer server(80);
-WiFiUDP UDP;
 Preferences prefs;
-
-IPAddress timeServerIP;
-const char* ntpServerName = "time.nist.gov";
-
-const int NTP_PACKET_SIZE = 48;
-byte packetBuffer[NTP_PACKET_SIZE];
 
 /*
   =========================
@@ -58,16 +48,10 @@ byte packetBuffer[NTP_PACKET_SIZE];
   =========================
 */
 
-const unsigned long intervalNTP = ONE_HOUR;
-unsigned long prevNTP = 0;
-unsigned long lastNTPResponse = millis();
-
-const unsigned long intervalTemp = 60000;
+const unsigned long intervalTemp = ONE_MINUTE;
 unsigned long prevTemp = 0;
 bool tmpRequested = false;
 const unsigned long DS_delay = 750;
-
-uint32_t timeUNIX = 0;
 
 /*
   =========================
@@ -78,7 +62,7 @@ uint32_t timeUNIX = 0;
 void setup() {
   Serial.begin(115200);
   delay(500);
-  Serial.println("\n--- ESP32-C3 Sensorlogger ---");
+  Serial.println("\n--- ESP32-C3 Sensorlogger (RTC + SNTP) ---");
 
   pinMode(SETUP_PIN, INPUT_PULLUP);
 
@@ -88,14 +72,13 @@ void setup() {
   listFilesSerial();
 
   if (!startWiFi()) {
-    startConfigPortal();
+    startConfigPortal();   // blockierend bis WLAN gesetzt
   }
 
-  startServer();
-  startUDP();
+  startSNTP();             // <<< echte RTC + SNTP
+  waitForTime();           // <<< warten bis Zeit gültig
 
-  WiFi.hostByName(ntpServerName, timeServerIP);
-  sendNTPpacket(timeServerIP);
+  startServer();
 }
 
 /*
@@ -107,18 +90,7 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  if (now - prevNTP > intervalNTP) {
-    prevNTP = now;
-    sendNTPpacket(timeServerIP);
-  }
-
-  uint32_t t = getTime();
-  if (t) {
-    timeUNIX = t;
-    lastNTPResponse = millis();
-  }
-
-  if (timeUNIX && now - prevTemp > intervalTemp) {
+  if (now - prevTemp > intervalTemp) {
     tempSensors.requestTemperatures();
     tmpRequested = true;
     prevTemp = now;
@@ -126,14 +98,18 @@ void loop() {
 
   if (tmpRequested && now - prevTemp > DS_delay) {
     tmpRequested = false;
+
     float temp = tempSensors.getTempCByIndex(0);
     temp = round(temp * 100) / 100.0;
 
-    uint32_t ts = timeUNIX + (millis() - lastNTPResponse) / 1000;
+    // Unix-Time direkt aus RTC (GMT/UTC)
+    time_t ts = time(nullptr);
 
     File f = LittleFS.open("/data.csv", "a");
-    f.printf("%lu;%.2f;;;;;\n", ts, temp);
+    f.printf("%lu;%.2f;;;;;\n", (uint32_t)ts, temp);
     f.close();
+
+    Serial.printf("LOG: %lu ; %.2f\n", (uint32_t)ts, temp);
   }
 
   server.handleClient();
@@ -151,6 +127,7 @@ bool startWiFi() {
   String pass = prefs.getString("pass", "");
   prefs.end();
 
+  // Setup erzwingen per Taster oder wenn keine Daten vorhanden
   if (ssid == "" || digitalRead(SETUP_PIN) == LOW) return false;
 
   Serial.print("Connecting to: ");
@@ -171,7 +148,9 @@ bool startWiFi() {
 }
 
 /*
-  Setup Access Point + WLAN Scan + Mini-Konfig-Portal
+  =========================
+  Setup-Portal (AP + WLAN Scan)
+  =========================
 */
 
 void startConfigPortal() {
@@ -212,7 +191,34 @@ void startConfigPortal() {
 
   server.begin();
 
+  // Blockierend im Setup-Modus
   while (true) server.handleClient();
+}
+
+/*
+  =========================
+  RTC + SNTP
+  =========================
+*/
+
+void startSNTP() {
+  // GMT / UTC → offset = 0, daylight = 0
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  Serial.println("SNTP gestartet (UTC / GMT)");
+}
+
+void waitForTime() {
+  Serial.print("Warte auf Zeit-Sync");
+  time_t now;
+  do {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+  } while (now < 1700000000);   // grobe Plausibilitätsgrenze (~2023)
+
+  Serial.println("\nZeit synchronisiert!");
+  Serial.print("Unix-Time: ");
+  Serial.println((uint32_t)now);
 }
 
 /*
@@ -284,6 +290,7 @@ bool handleFileRead(String path) {
   String contentType = getContentType(path);
   String gzPath = path + ".gz";
 
+  // gzip bevorzugen
   if (LittleFS.exists(gzPath)) path = gzPath;
   if (!LittleFS.exists(path)) return false;
 
@@ -291,38 +298,6 @@ bool handleFileRead(String path) {
   server.streamFile(file, contentType);
   file.close();
   return true;
-}
-
-/*
-  =========================
-  UDP + NTP
-  =========================
-*/
-
-void startUDP() {
-  UDP.begin(123);
-}
-
-unsigned long getTime() {
-  if (!UDP.parsePacket()) return 0;
-
-  UDP.read(packetBuffer, NTP_PACKET_SIZE);
-
-  uint32_t ntp = (packetBuffer[40] << 24) |
-                 (packetBuffer[41] << 16) |
-                 (packetBuffer[42] << 8) |
-                 packetBuffer[43];
-
-  return ntp - 2208988800UL;
-}
-
-void sendNTPpacket(IPAddress& address) {
-  memset(packetBuffer, 0, NTP_PACKET_SIZE);
-  packetBuffer[0] = 0b11100011;
-
-  UDP.beginPacket(address, 123);
-  UDP.write(packetBuffer, NTP_PACKET_SIZE);
-  UDP.endPacket();
 }
 
 /*
