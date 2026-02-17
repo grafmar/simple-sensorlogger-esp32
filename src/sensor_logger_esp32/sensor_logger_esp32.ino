@@ -146,28 +146,62 @@ bool startWiFi() {
   ============================================================================
 */
 
+static const char WIFI_SETUP_HTML_PAGE[] PROGMEM = R"rawliteral(
+<!DOCTYPE html><html><head>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>WiFi Setup</title>
+<style>
+body{font-family:Arial;text-align:center}
+form{display:inline-block;text-align:left}
+button{border:0;border-radius:.3rem;background:#1fa3ec;color:#fff;
+line-height:2.4rem;font-size:1.1rem;width:100%}
+input,select{width:100%;padding:6px;margin:0 0 8px;
+font-size:1em;box-sizing:border-box;border:1px solid #ddd;border-radius:.2rem}
+</style></head><body>
+
+<h2>WiFi Setup</h2>
+
+<form action="/save" method="POST">
+SSID:<br>
+<select name="s">
+{{OPTIONS}}
+</select>
+
+Password:<br>
+<input name="p" type="password">
+
+<button>Save</button>
+</form>
+
+</body></html>
+)rawliteral";
+
 void startConfigPortal() {
+  WiFi.mode(WIFI_AP_STA);
+  delay(100);
   WiFi.softAP("Sensorlogger-Setup");
+  delay(200);
 
   Serial.println("\nSETUP MODE");
   Serial.print("AP IP: ");
   Serial.println(WiFi.softAPIP());
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    String options;
 
-    String html =
-      "<h2>WiFi Setup</h2>"
-      "<form action='/save' method='POST'>"
-      "SSID:<br><select name='s'>";
-
+    Serial.println("Network scan:");
     int n = WiFi.scanNetworks();
-    for (int i = 0; i < n; i++)
-      html += "<option>" + WiFi.SSID(i) + "</option>";
+    Serial.printf("Scan result: %d networks\n", n);
+    for (int i = 0; i < n; i++) {
+      options += "<option>" + WiFi.SSID(i) + "</option>";
+      Serial.println(WiFi.SSID(i));
+    }
 
-    html +=
-      "</select><br>Password:<br>"
-      "<input name='p' type='password'><br><br>"
-      "<button>Save</button></form>";
+    Serial.println("Options:");
+    Serial.println(options);
+
+    String html = FPSTR(WIFI_SETUP_HTML_PAGE);
+    html.replace("{{OPTIONS}}", options);
 
     request->send(200, "text/html", html);
   });
