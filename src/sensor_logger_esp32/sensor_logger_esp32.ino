@@ -14,6 +14,7 @@
 #define SETUP_PIN          9       // LOW = force WiFi setup portal
 #define WIFI_TIMEOUT       15000   // ms
 #define LOG_INTERVAL_MS    60000   // 1 minute logging interval
+#define LOG_INTERVAL_MS    5000   // 5s logging interval
 
 #define MAX_CHUNKS         16
 #define CHUNK_SIZE_BYTES  32768   // 32 KB per log chunk
@@ -329,7 +330,7 @@ void writeLog(time_t ts, float temp) {
   }
 
   File f = LittleFS.open(path, "a");
-  f.printf("%lu;%.2f;;;;;\n", (uint32_t)ts, temp);
+  f.printf("%lu;%.2f;%.2f;%.2f;%.2f;%.2f;%.2f\n", (uint32_t)ts, temp, 2*temp, 45.0-1.2*temp, 2*(45.0-temp), 2.0+1.1*temp, 43.0-temp);
   f.close();
 }
 
