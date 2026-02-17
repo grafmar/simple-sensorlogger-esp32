@@ -177,10 +177,14 @@ Password:<br>
 )rawliteral";
 
 void startConfigPortal() {
-  WiFi.mode(WIFI_AP_STA);
-  delay(100);
-  WiFi.softAP("Sensorlogger-Setup");
+  WiFi.disconnect(true);
   delay(200);
+
+  WiFi.mode(WIFI_AP_STA);
+  delay(200);
+
+  WiFi.softAP("Sensorlogger-Setup");
+  delay(300);
 
   Serial.println("\nSETUP MODE");
   Serial.print("AP IP: ");
@@ -191,14 +195,15 @@ void startConfigPortal() {
 
     Serial.println("Network scan:");
     int n = WiFi.scanNetworks();
-    Serial.printf("Scan result: %d networks\n", n);
-    for (int i = 0; i < n; i++) {
-      options += "<option>" + WiFi.SSID(i) + "</option>";
-      Serial.println(WiFi.SSID(i));
-    }
 
-    Serial.println("Options:");
-    Serial.println(options);
+    Serial.printf("Scan result: %d\n", n);
+
+    for (int i = 0; i < n; i++) {
+      options += "<option>";
+      options += WiFi.SSID(i);
+      options += "</option>";
+      Serial.printf("%s (chan: %d)\n", WiFi.SSID(i).c_str(), WiFi.channel(i));
+    }
 
     String html = FPSTR(WIFI_SETUP_HTML_PAGE);
     html.replace("{{OPTIONS}}", options);
