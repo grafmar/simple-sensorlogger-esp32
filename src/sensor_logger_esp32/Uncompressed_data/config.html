@@ -1,23 +1,26 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Log-Konfiguration</title>
+<title>Log Configuration</title>
 <style>
 body { font-family: Arial, sans-serif; margin: 20px; }
 label { margin-right: 10px; }
 input[type=number] { width: 60px; }
-select { width: 40px; margin-right: 40px; } /* schmaler + Abstand zu Buttons */
-button { margin: 0 5px 5px 0; }
-#calc { margin-top: 20px; padding: 10px; border: 1px solid #ccc; width: 440px; }
+select { width: 40px; margin-right: 40px; } /* narrow dropdown + spacing */
+button { margin-left: 5px; }
+#calc { margin-top: 20px; padding: 10px; border: 1px solid #ccc; width: 500px; }
+#fileControls { margin-top: 10px; display: flex; align-items: center; }
+#fileSlider { width: 200px; vertical-align: middle; }
+#logSize { margin-left: 20px; font-weight: bold; }
 </style>
 </head>
 <body>
 
-<h2>Log-Einstellungen</h2>
+<h2>Log Settings</h2>
 
 <form id="logForm">
-  <label>Intervall:</label>
+  <label>Interval:</label>
   <input type="number" id="intervalValue" min="1" value="15">
   <select id="intervalUnit">
     <option value="1">s</option>
@@ -33,22 +36,34 @@ button { margin: 0 5px 5px 0; }
   <button type="button" onclick="setIntervalShortcut(1,'h')">1h</button>
   <br><br>
 
-  <label>Anzahl Log-Dateien:</label>
-  <input type="number" id="numFiles" min="2" max="48" value="10">
+  <div id="fileControls">
+		<label>Log Size:</label>
+    <input type="range" id="fileSlider" min="2" max="48" value="16" oninput="updateSliderValue()">
+    <div style="display:flex; margin-left: 10px;">
+      <button type="button" onclick="setNumFilesPreset(16)">Small</button>
+      <button type="button" onclick="setNumFilesPreset(32)">Mid</button>
+      <button type="button" onclick="setNumFilesPreset(48)">Big</button>
+    </div>
+    <div id="logSize">?? (? chunks))</div>
+  </div>
 </form>
 
 <div id="calc">
-  <h3>Berechnung</h3>
-  <p>Interval in Sekunden: <span id="intervalSec"></span>s</p>
-  <p>Max Log-Dateigröße: 32 kB</p>
-  <p>Gesamt-Loggröße: <span id="totalSize"></span> kB</p>
-  <p>Geschätzte Log-Dauer (Mindestwert): <span id="logDuration"></span></p>
+  <h3>Calculation</h3>
+  <p>Interval in seconds: <span id="intervalSec"></span>s</p>
+  <p>Max chunk size: 32 kB</p>
+  <p>Estimated log duration (min): <span id="logDuration"></span></p>
 </div>
 
 <script>
-const maxFileSizeKB = 32;
-const entrySize = 47; // Bytes pro Logeintrag
-const entriesPerFile = (maxFileSizeKB*1024)/entrySize;
+const maxChunkKB = 32;
+const entrySize = 47; // Bytes per log entry
+const entriesPerChunk = (maxChunkKB*1024)/entrySize;
+
+const intervalValueEl = document.getElementById('intervalValue');
+const intervalUnitEl = document.getElementById('intervalUnit');
+const fileSliderEl = document.getElementById('fileSlider');
+const logSizeEl = document.getElementById('logSize');
 
 function formatDuration(seconds) {
   const days = Math.floor(seconds / 86400);
@@ -56,38 +71,46 @@ function formatDuration(seconds) {
   const hours = Math.floor(seconds / 3600);
   seconds %= 3600;
   const minutes = Math.floor(seconds / 60);
-  return `${days} Tage, ${hours} Stunden, ${minutes} Minuten`;
+  return `${days} days, ${hours} hours, ${minutes} minutes`;
 }
 
 function updateCalculation() {
-  let interval = parseFloat(document.getElementById('intervalValue').value);
-  let unit = parseFloat(document.getElementById('intervalUnit').value);
+  let interval = parseFloat(intervalValueEl.value);
+  let unit = parseFloat(intervalUnitEl.value);
   let intervalSec = interval * unit;
 
-  let numFiles = parseInt(document.getElementById('numFiles').value);
-  let calcFiles = Math.max(1, numFiles - 1); // ein File für Löschvorgang abziehen
+  let numChunks = parseInt(fileSliderEl.value);
+  let calcChunks = Math.max(1, numChunks - 1); // reserve one chunk for deletion
 
-  let totalSizeKB = numFiles * maxFileSizeKB;
-  let totalDurationSec = intervalSec * entriesPerFile * calcFiles;
+  let totalSizeKB = numChunks * maxChunkKB;
+  let totalDurationSec = intervalSec * entriesPerChunk * calcChunks;
 
   document.getElementById('intervalSec').textContent = intervalSec;
-  document.getElementById('totalSize').textContent = totalSizeKB.toFixed(1);
+  logSizeEl.textContent = `${totalSizeKB.toFixed(1)} kB (${numChunks} chunks)`;
   document.getElementById('logDuration').textContent = formatDuration(totalDurationSec);
 }
 
 function setIntervalShortcut(value, unitStr) {
-  document.getElementById('intervalValue').value = value;
-  let unitSelect = document.getElementById('intervalUnit');
-  if(unitStr === 's') unitSelect.value = 1;
-  else if(unitStr === 'm') unitSelect.value = 60;
-  else if(unitStr === 'h') unitSelect.value = 3600;
+  intervalValueEl.value = value;
+  if(unitStr === 's') intervalUnitEl.value = 1;
+  else if(unitStr === 'm') intervalUnitEl.value = 60;
+  else if(unitStr === 'h') intervalUnitEl.value = 3600;
+  updateCalculation();
+}
+
+function setNumFilesPreset(num) {
+  fileSliderEl.value = num;
+  updateCalculation();
+}
+
+function updateSliderValue() {
   updateCalculation();
 }
 
 // Events
-document.getElementById('intervalValue').addEventListener('input', updateCalculation);
-document.getElementById('intervalUnit').addEventListener('change', updateCalculation);
-document.getElementById('numFiles').addEventListener('input', updateCalculation);
+intervalValueEl.addEventListener('input', updateCalculation);
+intervalUnitEl.addEventListener('change', updateCalculation);
+fileSliderEl.addEventListener('input', updateCalculation);
 
 // Initial
 updateCalculation();
