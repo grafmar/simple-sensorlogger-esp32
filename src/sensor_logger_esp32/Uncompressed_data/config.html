@@ -7,7 +7,7 @@
 body { font-family: Arial, sans-serif; margin: 20px; }
 label { margin-right: 10px; }
 input[type=number] { width: 60px; }
-select { width: 40px; margin-right: 40px; } /* narrow dropdown + spacing */
+select { width: 40px; margin-right: 40px; }
 button { margin-left: 5px; }
 #calc { margin-top: 20px; padding: 10px; border: 1px solid #ccc; width: 500px; }
 #fileControls { margin-top: 10px; display: flex; align-items: center; }
@@ -19,7 +19,10 @@ button { margin-left: 5px; }
 
 <h2>Log Settings</h2>
 
-<form id="logForm">
+<form id="logForm" action="/savesettings" method="get">
+  <!-- Hidden input for interval in seconds -->
+  <input type="hidden" id="intervalSecInput" name="interval" value="15">
+
   <label>Interval:</label>
   <input type="number" id="intervalValue" min="1" value="15">
   <select id="intervalUnit">
@@ -28,7 +31,7 @@ button { margin-left: 5px; }
     <option value="3600">h</option>
   </select>
 
-  <!-- Shortcut Buttons -->
+  <!-- Shortcut Buttons just set interval in seconds -->
   <button type="button" onclick="setIntervalShortcut(10,'s')">10s</button>
   <button type="button" onclick="setIntervalShortcut(1,'m')">1m</button>
   <button type="button" onclick="setIntervalShortcut(10,'m')">10m</button>
@@ -37,15 +40,19 @@ button { margin-left: 5px; }
   <br><br>
 
   <div id="fileControls">
-		<label>Log Size:</label>
-    <input type="range" id="fileSlider" min="2" max="48" value="16" oninput="updateSliderValue()">
+    <label>Log Size:</label>
+    <input type="range" id="fileSlider" min="2" max="48" name="numChunks" value="16" oninput="updateSliderValue()">
     <div style="display:flex; margin-left: 10px;">
-      <button type="button" onclick="setNumFilesPreset(16)">Small</button>
-      <button type="button" onclick="setNumFilesPreset(32)">Mid</button>
-      <button type="button" onclick="setNumFilesPreset(48)">Big</button>
+      <!-- Buttons that submit the form with the chosen chunk count -->
+      <button type="submit" onclick="document.getElementById('fileSlider').value=16; updateSliderValue();">Small</button>
+      <button type="submit" onclick="document.getElementById('fileSlider').value=32; updateSliderValue();">Mid</button>
+      <button type="submit" onclick="document.getElementById('fileSlider').value=48; updateSliderValue();">Big</button>
     </div>
-    <div id="logSize">?? (? chunks))</div>
+    <div id="logSize">?? (? chunks)</div>
   </div>
+
+  <br>
+  <button type="submit">Save</button>
 </form>
 
 <div id="calc">
@@ -62,6 +69,7 @@ const entriesPerChunk = (maxChunkKB*1024)/entrySize;
 
 const intervalValueEl = document.getElementById('intervalValue');
 const intervalUnitEl = document.getElementById('intervalUnit');
+const intervalSecInputEl = document.getElementById('intervalSecInput');
 const fileSliderEl = document.getElementById('fileSlider');
 const logSizeEl = document.getElementById('logSize');
 
@@ -79,8 +87,11 @@ function updateCalculation() {
   let unit = parseFloat(intervalUnitEl.value);
   let intervalSec = interval * unit;
 
+  // Update hidden input for form submission
+  intervalSecInputEl.value = intervalSec;
+
   let numChunks = parseInt(fileSliderEl.value);
-  let calcChunks = Math.max(1, numChunks - 1); // reserve one chunk for deletion
+  let calcChunks = Math.max(1, numChunks - 1);
 
   let totalSizeKB = numChunks * maxChunkKB;
   let totalDurationSec = intervalSec * entriesPerChunk * calcChunks;
@@ -95,11 +106,6 @@ function setIntervalShortcut(value, unitStr) {
   if(unitStr === 's') intervalUnitEl.value = 1;
   else if(unitStr === 'm') intervalUnitEl.value = 60;
   else if(unitStr === 'h') intervalUnitEl.value = 3600;
-  updateCalculation();
-}
-
-function setNumFilesPreset(num) {
-  fileSliderEl.value = num;
   updateCalculation();
 }
 
