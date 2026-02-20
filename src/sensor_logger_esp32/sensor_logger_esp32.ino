@@ -416,9 +416,10 @@ void handleDownload(AsyncWebServerRequest *request) {
 
         if (!dlActive) return 0;
 
+        const size_t MAX_PER_CALL = 2048;   // Sweet spot
         size_t len = 0;
 
-        while (len < maxLen) {
+        while (len < maxLen && len < MAX_PER_CALL) {
 
           if (!dlFile || !dlFile.available()) {
             dlFile.close();
@@ -429,15 +430,15 @@ void handleDownload(AsyncWebServerRequest *request) {
             continue;
           }
 
-          int c = dlFile.read();
-          if (c < 0) break;
+          size_t toRead = min(MAX_PER_CALL - len, maxLen - len);
+          size_t n = dlFile.read(buffer + len, toRead);
 
-          buffer[len++] = c;
+          if (n == 0) break;
 
-          if (len >= 512) break;   // <<< EXTREM WICHTIG
+          len += n;
         }
 
-        return len;
+        return len;  // sofort zurück → Async kann arbeiten
       });
 
   response->addHeader(
