@@ -7,9 +7,9 @@
 body { font-family: Arial, sans-serif; margin: 20px; }
 label { margin-right: 10px; }
 input[type=number] { width: 60px; }
-select { width: 80px; }
+select { width: 40px; margin-right: 40px; } /* schmaler + Abstand zu Buttons */
 button { margin: 0 5px 5px 0; }
-#calc { margin-top: 20px; padding: 10px; border: 1px solid #ccc; width: 400px; }
+#calc { margin-top: 20px; padding: 10px; border: 1px solid #ccc; width: 440px; }
 </style>
 </head>
 <body>
@@ -25,14 +25,16 @@ button { margin: 0 5px 5px 0; }
     <option value="3600">h</option>
   </select>
 
+  <!-- Shortcut Buttons -->
   <button type="button" onclick="setIntervalShortcut(10,'s')">10s</button>
   <button type="button" onclick="setIntervalShortcut(1,'m')">1m</button>
   <button type="button" onclick="setIntervalShortcut(10,'m')">10m</button>
   <button type="button" onclick="setIntervalShortcut(20,'m')">20m</button>
+  <button type="button" onclick="setIntervalShortcut(1,'h')">1h</button>
   <br><br>
 
   <label>Anzahl Log-Dateien:</label>
-  <input type="number" id="numFiles" min="1" max="48" value="10">
+  <input type="number" id="numFiles" min="2" max="48" value="10">
 </form>
 
 <div id="calc">
@@ -40,13 +42,22 @@ button { margin: 0 5px 5px 0; }
   <p>Interval in Sekunden: <span id="intervalSec"></span>s</p>
   <p>Max Log-Dateigröße: 32 kB</p>
   <p>Gesamt-Loggröße: <span id="totalSize"></span> kB</p>
-  <p>Geschätzte Log-Dauer: <span id="logHours"></span> Stunden</p>
+  <p>Geschätzte Log-Dauer (Mindestwert): <span id="logDuration"></span></p>
 </div>
 
 <script>
 const maxFileSizeKB = 32;
-const entrySize = 50; // durchschnittliche Zeilenlänge in Bytes
+const entrySize = 47; // Bytes pro Logeintrag
 const entriesPerFile = (maxFileSizeKB*1024)/entrySize;
+
+function formatDuration(seconds) {
+  const days = Math.floor(seconds / 86400);
+  seconds %= 86400;
+  const hours = Math.floor(seconds / 3600);
+  seconds %= 3600;
+  const minutes = Math.floor(seconds / 60);
+  return `${days} Tage, ${hours} Stunden, ${minutes} Minuten`;
+}
 
 function updateCalculation() {
   let interval = parseFloat(document.getElementById('intervalValue').value);
@@ -54,13 +65,14 @@ function updateCalculation() {
   let intervalSec = interval * unit;
 
   let numFiles = parseInt(document.getElementById('numFiles').value);
+  let calcFiles = Math.max(1, numFiles - 1); // ein File für Löschvorgang abziehen
 
   let totalSizeKB = numFiles * maxFileSizeKB;
-  let totalDurationHours = (intervalSec * entriesPerFile * numFiles) / 3600;
+  let totalDurationSec = intervalSec * entriesPerFile * calcFiles;
 
   document.getElementById('intervalSec').textContent = intervalSec;
   document.getElementById('totalSize').textContent = totalSizeKB.toFixed(1);
-  document.getElementById('logHours').textContent = totalDurationHours.toFixed(1);
+  document.getElementById('logDuration').textContent = formatDuration(totalDurationSec);
 }
 
 function setIntervalShortcut(value, unitStr) {
