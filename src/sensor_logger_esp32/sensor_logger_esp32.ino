@@ -47,6 +47,10 @@ TempSensor tempSensors;
 AsyncWebServer server(80);
 Preferences prefs;
 
+File dlFile;
+int dlIndex = 0;
+bool dlActive = false;
+
 /*
   ============================================================================
     Logging state
@@ -384,26 +388,61 @@ void startServer() {
 
 /*
   ============================================================================
-    Download handler (streams all chunks into one CSV)
+    Download handler (streams all chunks into one CSV but in very small stream bits)
   ============================================================================
 */
 
-void handleDownload(AsyncWebServerRequest *request) {
-
-  AsyncResponseStream *response =
-      request->beginResponseStream("text/csv");
-
-  response->addHeader("Content-Disposition",
-                       "attachment; filename=\"data.csv\"");
-
-  for (int i = 0; i < MAX_CHUNKS; i++) {
-    String path = "/log_" + String(i) + ".csv";
-    if (!LittleFS.exists(path)) continue;
-
-    File f = LittleFS.open(path, "r");
-    while (f.available()) response->write(f.read());
-    f.close();
+bool openNextLogFile() {
+  while (dlIndex < MAX_CHUNKS) {
+    String path = "/log_" + String(dlIndex++) + ".csv";
+    if (LittleFS.exists(path)) {
+      dlFile = LittleFS.open(path, "r");
+      return dlFile;
+    }
   }
+  return false;
+}
+
+void handleDownload(AsyncWebServerRequest *request) {
+  dlIndex = 0;
+  dlActive = true;
+  dlFile.close();
+  openNextLogFile();
+
+  AsyncWebServerResponse *response =
+    request->beginChunkedResponse(
+      "text/csv",
+      [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+
+        if (!dlActive) return 0;
+
+        size_t len = 0;
+
+        while (len < maxLen) {
+
+          if (!dlFile || !dlFile.available()) {
+            dlFile.close();
+            if (!openNextLogFile()) {
+              dlActive = false;
+              break;
+            }
+            continue;
+          }
+
+          int c = dlFile.read();
+          if (c < 0) break;
+
+          buffer[len++] = c;
+
+          if (len >= 512) break;   // <<< EXTREM WICHTIG
+        }
+
+        return len;
+      });
+
+  response->addHeader(
+    "Content-Disposition",
+    "attachment; filename=\"data.csv\"");
 
   request->send(response);
 }
