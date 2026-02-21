@@ -284,59 +284,97 @@ void listFilesSerial() {
 
 /*
   ============================================================================
-    Rolling log handling
+    Rolling log handling (FIFO: newest always log_0)
   ============================================================================
 */
 
+/*
+  On boot:
+  - Remove files beyond MAX_CHUNKS
+  - Nothing else required
+*/
 void detectCurrentChunk() {
-  currentChunk = 0;
 
-  for (int i = 0; i < MAX_CHUNKS; i++) {
+  Serial.println("Checking log file limits...");
+
+  // Delete files exceeding MAX_CHUNKS
+  for (int i = MAX_CHUNKS; i < 255; i++) {
     String path = "/log_" + String(i) + ".csv";
-    if (!LittleFS.exists(path)) break;
-
-    File f = LittleFS.open(path, "r");
-    if (f.size() < CHUNK_SIZE_BYTES) {
-      currentChunk = i;
-      f.close();
-      return;
+    if (LittleFS.exists(path)) {
+      Serial.printf("Removing old file: %s\n", path.c_str());
+      LittleFS.remove(path);
     }
-    f.close();
   }
-
-  currentChunk = MAX_CHUNKS - 1;
 }
 
+
+/*
+  Rotate logs:
+
+  log_0 -> log_1
+  log_1 -> log_2
+  ...
+  log_(MAX-2) -> log_(MAX-1)
+  log_(MAX-1) gets deleted
+*/
 void rotateLogs() {
-  Serial.println("Rotating log chunks");
 
-  if (LittleFS.exists("/log_0.csv")) LittleFS.remove("/log_0.csv");
+  Serial.println("Rotating log files (FIFO mode)");
 
-  for (int i = 1; i < MAX_CHUNKS; i++) {
-    String oldName = "/log_" + String(i) + ".csv";
-    String newName = "/log_" + String(i - 1) + ".csv";
-    if (LittleFS.exists(oldName)) LittleFS.rename(oldName, newName);
+  // Delete oldest file if it exists
+  String oldest = "/log_" + String(MAX_CHUNKS - 1) + ".csv";
+  if (LittleFS.exists(oldest)) {
+    LittleFS.remove(oldest);
   }
 
-  currentChunk = MAX_CHUNKS - 1;
+  // Shift files backwards (from high to low)
+  for (int i = MAX_CHUNKS - 2; i >= 0; i--) {
+
+    String oldName = "/log_" + String(i) + ".csv";
+    String newName = "/log_" + String(i + 1) + ".csv";
+
+    if (LittleFS.exists(oldName)) {
+      LittleFS.rename(oldName, newName);
+    }
+  }
+
+  // Now log_0 is free for new file
 }
 
+
+/*
+  Always write to log_0.
+  When it exceeds CHUNK_SIZE_BYTES:
+  -> rotate
+  -> create fresh log_0
+*/
 void writeLog(time_t ts, float temp) {
-  String path = "/log_" + String(currentChunk) + ".csv";
+
+  String path = "/log_0.csv";
 
   if (LittleFS.exists(path)) {
+
     File f = LittleFS.open(path, "r");
-    if (f.size() > CHUNK_SIZE_BYTES) {
+
+    if (f.size() >= CHUNK_SIZE_BYTES) {
       f.close();
       rotateLogs();
-      path = "/log_" + String(currentChunk) + ".csv";
     } else {
       f.close();
     }
   }
 
   File f = LittleFS.open(path, "a");
-  f.printf("%lu;%.2f;%.2f;%.2f;%.2f;%.2f;%.2f\n", (uint32_t)ts, temp, 2*temp, 45.0-1.2*temp, 2*(45.0-temp), 2.0+1.1*temp, 43.0-temp);
+
+  f.printf("%lu;%.2f;%.2f;%.2f;%.2f;%.2f;%.2f\n",
+           (uint32_t)ts,
+           temp,
+           2 * temp,
+           45.0 - 1.2 * temp,
+           2 * (45.0 - temp),
+           2.0 + 1.1 * temp,
+           43.0 - temp);
+
   f.close();
 }
 
@@ -395,20 +433,26 @@ void startServer() {
 */
 
 bool openNextLogFile() {
-  while (dlIndex < MAX_CHUNKS) {
-    String path = "/log_" + String(dlIndex++) + ".csv";
+
+  while (dlIndex >= 0) {
+
+    String path = "/log_" + String(dlIndex--) + ".csv";
+
     if (LittleFS.exists(path)) {
       dlFile = LittleFS.open(path, "r");
       return dlFile;
     }
   }
+
   return false;
 }
 
 void handleDownload(AsyncWebServerRequest *request) {
-  dlIndex = 0;
+
+  dlIndex = MAX_CHUNKS - 1;   // Start with oldest
   dlActive = true;
   dlFile.close();
+
   openNextLogFile();
 
   AsyncWebServerResponse *response =
@@ -418,17 +462,20 @@ void handleDownload(AsyncWebServerRequest *request) {
 
         if (!dlActive) return 0;
 
-        const size_t MAX_PER_CALL = 2048;   // Sweet spot
+        const size_t MAX_PER_CALL = 2048;
         size_t len = 0;
 
         while (len < maxLen && len < MAX_PER_CALL) {
 
           if (!dlFile || !dlFile.available()) {
+
             dlFile.close();
+
             if (!openNextLogFile()) {
               dlActive = false;
               break;
             }
+
             continue;
           }
 
@@ -440,7 +487,7 @@ void handleDownload(AsyncWebServerRequest *request) {
           len += n;
         }
 
-        return len;  // sofort zurück → Async kann arbeiten
+        return len;
       });
 
   response->addHeader(
