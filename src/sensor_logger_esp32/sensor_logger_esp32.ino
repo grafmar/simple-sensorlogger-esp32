@@ -13,10 +13,11 @@
 
 #define SETUP_PIN          9       // LOW = force WiFi setup portal
 #define WIFI_TIMEOUT       15000   // ms
-#define LOG_INTERVAL_MS    60000   // 1 minute logging interval
+//#define LOG_INTERVAL_MS    60000   // 1 minute logging interval
 #define LOG_INTERVAL_MS    5000   // 5s logging interval
 
-#define MAX_CHUNKS         16
+//#define MAX_CHUNKS         16
+#define MAX_CHUNKS         48
 #define CHUNK_SIZE_BYTES  32768   // 32 KB per log chunk
 
 /*
@@ -103,10 +104,11 @@ void loop() {
   if (now - lastLogTime > LOG_INTERVAL_MS) {
     lastLogTime = now;
 
-    float temp = tempSensors.getTempCByIndex(0);
-    temp = round(temp * 100) / 100.0;
-
     time_t ts = time(nullptr);  // RTC time (Unix UTC)
+
+    float temp = tempSensors.getTempCByIndex(0);
+    temp = 20+(temp-20)*.1 + 5* (ts%(3600*2))/(3600.0*2);
+    temp = round(temp * 100) / 100.0;
 
     writeLog(ts, temp);
 
