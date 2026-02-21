@@ -449,7 +449,7 @@ bool openNextLogFile() {
 
 void handleDownload(AsyncWebServerRequest *request) {
 
-  dlIndex = MAX_CHUNKS - 1;   // Start with oldest
+  dlIndex = MAX_CHUNKS - 1;   // start with oldest
   dlActive = true;
   dlFile.close();
 
@@ -463,31 +463,36 @@ void handleDownload(AsyncWebServerRequest *request) {
         if (!dlActive) return 0;
 
         const size_t MAX_PER_CALL = 2048;
-        size_t len = 0;
 
-        while (len < maxLen && len < MAX_PER_CALL) {
-
-          if (!dlFile || !dlFile.available()) {
-
-            dlFile.close();
-
-            if (!openNextLogFile()) {
-              dlActive = false;
-              break;
-            }
-
-            continue;
-          }
-
-          size_t toRead = min(MAX_PER_CALL - len, maxLen - len);
-          size_t n = dlFile.read(buffer + len, toRead);
-
-          if (n == 0) break;
-
-          len += n;
+        if (!dlFile) {
+          dlActive = false;
+          return 0;
         }
 
-        return len;
+        size_t toRead = min(MAX_PER_CALL, maxLen);
+        size_t bytesRead = dlFile.read(buffer, toRead);
+
+        if (bytesRead > 0) {
+          return bytesRead;
+        }
+
+        // current file finished → open next
+        dlFile.close();
+
+        if (!openNextLogFile()) {
+          dlActive = false;
+          return 0;
+        }
+
+        // read from next file immediately
+        bytesRead = dlFile.read(buffer, toRead);
+
+        if (bytesRead > 0) {
+          return bytesRead;
+        }
+
+        dlActive = false;
+        return 0;
       });
 
   response->addHeader(
