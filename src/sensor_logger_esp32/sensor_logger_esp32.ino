@@ -49,6 +49,7 @@ AsyncWebServer server(80);
 Preferences prefs;
 
 File dlFile;
+File fsUploadFile;
 int dlIndex = 0;
 bool dlActive = false;
 
@@ -403,6 +404,64 @@ void startServer() {
   });
 
   server.on("/data.csv", HTTP_GET, handleDownload);
+
+  server.on(
+    "/edit.html",
+    HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+      request->send(200, "text/plain", "");
+    },
+    [](AsyncWebServerRequest *request,
+      String filename,
+      size_t index,
+      uint8_t *data,
+      size_t len,
+      bool final) {
+
+      // File upload handler
+
+      if (!index) {
+        // Upload start
+
+        if (!filename.startsWith("/"))
+          filename = "/" + filename;
+
+        // If uploading non-gz file → remove old gz version
+        if (!filename.endsWith(".gz")) {
+          String gz = filename + ".gz";
+          if (LittleFS.exists(gz)) {
+            LittleFS.remove(gz);
+          }
+        }
+
+        Serial.printf("UploadStart: %s\n", filename.c_str());
+
+        fsUploadFile = LittleFS.open(filename, "w");
+      }
+
+      // Write received chunk
+      if (len) {
+        if (fsUploadFile) {
+          fsUploadFile.write(data, len);
+        }
+      }
+
+      // Upload finished
+      if (final) {
+
+        if (fsUploadFile) {
+          fsUploadFile.close();
+          Serial.printf("UploadEnd: %s (%u bytes)\n",
+                        filename.c_str(),
+                        index + len);
+
+          request->redirect("/success.html");
+        } else {
+          request->send(500, "text/plain",
+                        "500: couldn't create file");
+        }
+      }
+    });
 
   server.serveStatic("/", LittleFS, "/")
         .setDefaultFile("index.html");
