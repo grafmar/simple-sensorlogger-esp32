@@ -54,9 +54,9 @@ To program the ESP32 for this project you need the following SW and additional l
 
 Open sensor_logger.ino project connect the Wemos D1 R2 mini via USB. Select the right serial port and select the board `LOLIN(WEMOS) D1 R2 & mini`.
 
-Select the right memory segmentation: Tools -> Flash Size -> `4MB(FS2MB OTA:~1019KB)`
+Select the right memory segmentation: Tools -> Partition Scheme -> `No OTA (2MB APP/2MB SPIFFS)`
 
-<img src="doc/memory_setting.png" alt="Memory setting" width="20%"/>
+<img src="doc/memory_setting.png" alt="Memory setting"/>
 
 Compile and upload the code to the ESP8266.
 
