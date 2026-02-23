@@ -63,6 +63,18 @@ Compile and upload the code to the ESP8266.
 
 To upload the data to the LittleFS you type: `[Ctrl]` + `[Shift]` + `[P]`, then "`Upload LittleFS to Pico/ESP8266/ESP32`". Check that the serial monitor is turned off, otherwise it won't work.
 
+## Speed
+Download of 1.5MB data.csv:
+
+```
+curl -o NUL http://10.53.182.228/data.csv -w "Total time: %{time_total} seconds\n"
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100 1495k    0 1495k    0     0   141k      0 --:--:--  0:00:10 --:--:--  175k
+Total time: 10.552708 seconds
+```
+So **~10.5s** for 1.5MB
+But the processing of the data and building of graph in the HTML-page takes some more time. So the load time on my machine is about **14s**.
 
 ## Acknowledgements
 The idea of this project is based on "Examples/16. Data logging/A-Temperature_logger" of the (https://github.com/tttapa/ESP8266/tree/master) repository. The sensor sampling code and HTML code have been mostly changed and also the chart library has been replaced with chart.js. But that's where the idea and has come from.
