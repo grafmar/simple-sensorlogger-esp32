@@ -27,14 +27,31 @@ The sensors to be used is not yet defined
 ## Software
 This project is still under construction. At the moment only a random number is logged as a temperature value.
 
-### Problems with Async webserver: ESP core 3.x.x is not compatible with the libraries. Had also problem after altering the library:
+### Log File Handling
+Sensor data is stored in rotating log files.
+Each log file has a fixed maximum chunk size of 32 kB.
 
-Altered lines in `C:\Users\<user>\Documents\Arduino\libraries\ESPAsyncWebServer\src\WebAuthentication.cpp` Line 74 and following:
-- `mbedtls_md5_starts_ret` with `mbedtls_md5_starts`
-- `mbedtls_md5_update_ret` with `mbedtls_md5_update`
-- `mbedtls_md5_finish_ret` with `mbedtls_md5_finish`
+New sensor entries are appended to `log_0.csv`.
+Once this file reaches the maximum chunk size, a log rotation is triggered:
 
-In files `AsyncEventSource.cpp` and `AsyncWebSocket.cpp` replace `ets_printf` with `printf`.
+- All existing log files are renamed with an incremented index
+- The oldest log chunk (highest index) is deleted
+- A new `log_0.csv` is created for continued logging
+
+This mechanism ensures constant storage usage while preserving the most recent data. By rotating log files, write operations are distributed across different flash sectors rather than continuously rewriting the same memory area. This reduces flash wear and increases long-term storage reliability.
+
+<p align="center"><img src="doc/log_rotation.png" alt="Log rotation"/><br>log rotation</p>
+
+### Web Integration
+For seamless integration into the web interface, the web server dynamically concatenates all log files and streams them as a single virtual file named `data.csv`.
+
+This streamed file:
+- can be processed directly in JavaScript for visualization
+- can be downloaded for external analysis
+
+The physical log files remain separate on the device; data.csv is generated on-the-fly during the request.
+
+<p align="center"><img src="doc/log_writing_streaming.png" alt="Log writing and streaming"/><br>log writing and streaming</p>
 
 ## Installation
 To program the ESP32 for this project you need the following SW and additional libraries and packages:
@@ -43,6 +60,9 @@ To program the ESP32 for this project you need the following SW and additional l
 - ESP Async TCP (2.0.0) by ESP32Async
 - Board support package `esp32` by Espressif Systems (V3.3.6)
 - LittleFS_esp32 by lorol (1.0.6)
+
+Note:
+*Problems may occur with Async webserver if the wrong libraries are used: ESP core 3.x.x is not compatible with the libraries.*
 
 
 - LittleFS uploader tool [arduino-littlefs-upload](https://github.com/earlephilhower/arduino-littlefs-upload?tab=readme-ov-file):
@@ -68,13 +88,8 @@ Download of 1.5MB data.csv:
 
 ```
 curl -o NUL http://10.53.182.228/data.csv -w "Total time: %{time_total} seconds\n"
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100 1495k    0 1495k    0     0   141k      0 --:--:--  0:00:10 --:--:--  175k
-Total time: 10.552708 seconds
 ```
-So **~10.5s** for 1.5MB
-But the processing of the data and building of graph in the HTML-page takes some more time. So the load time on my machine is about **14s**.
+It takes **~10.5s** for 1.5MB. But the processing of the data and building of graph in the HTML-page takes some more time. So the load time on my machine is about **14s**.
 
 ## Acknowledgements
 The idea of this project is based on "Examples/16. Data logging/A-Temperature_logger" of the (https://github.com/tttapa/ESP8266/tree/master) repository. The sensor sampling code and HTML code have been mostly changed and also the chart library has been replaced with chart.js. But that's where the idea and has come from.
