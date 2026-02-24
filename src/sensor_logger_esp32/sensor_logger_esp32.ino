@@ -406,7 +406,7 @@ void startServer() {
   server.on("/data.csv", HTTP_GET, handleDownload);
 
   server.on(
-    "/edit.html",
+    "/upload.html",
     HTTP_POST,
     [](AsyncWebServerRequest *request) {
       request->send(200, "text/plain", "");
