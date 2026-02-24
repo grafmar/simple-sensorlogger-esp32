@@ -43,10 +43,9 @@ button { margin-left: 5px; }
     <label>Log Size:</label>
     <input type="range" id="fileSlider" min="2" max="48" name="numChunks" value="16" oninput="updateSliderValue()">
     <div style="display:flex; margin-left: 10px;">
-      <!-- Buttons that submit the form with the chosen chunk count -->
-      <button type="submit" onclick="document.getElementById('fileSlider').value=16; updateSliderValue();">Small</button>
-      <button type="submit" onclick="document.getElementById('fileSlider').value=32; updateSliderValue();">Mid</button>
-      <button type="submit" onclick="document.getElementById('fileSlider').value=48; updateSliderValue();">Big</button>
+      <button type="button" onclick="document.getElementById('fileSlider').value=16; updateSliderValue();">Small</button>
+      <button type="button" onclick="document.getElementById('fileSlider').value=32; updateSliderValue();">Mid</button>
+      <button type="button" onclick="document.getElementById('fileSlider').value=48; updateSliderValue();">Big</button>
     </div>
     <div id="logSize">?? (? chunks)</div>
   </div>
