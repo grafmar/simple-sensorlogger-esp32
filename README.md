@@ -11,10 +11,9 @@ The device consists of an ESP32 with several sensors connected. This device conn
 
 <p align="center"><img src="doc/device_overview.png" alt="Device Overview" width="60%"/></p>
 
+The webserver running on the ESP32 serves the files directly from the filesystem (LittleFS). All the files like javascript html and images are ready to use on the filesystem and no active code has to be executed to show the webpage with the sensor data except for the sensor data themselves. Because they are stored in multiple files, a streaming agent concatenas all files and streams it as one big csv file.
 
-The webserver running on the ESP32 serves the files directly from the filesystem (LittleFS). All the files are ready to use on the filesystem and no active code has to be executed to show the webpage with the sensor data.
-
-On the other hand the sensor sampler samples all the sensors every configured period and stores the data into data.csv on the LittleFS. This file can than be accessed directly from the webpage.
+On the other hand the sensor sampler samples all the sensors every configured period and stores the data into the log chunkes on the LittleFS.
 
 <p align="center"><img src="doc/sw_overview.png" alt="SW Overview" width="60%"/></p>
 
