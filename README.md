@@ -1,7 +1,10 @@
 # simple-sensorlogger-esp32
-Logs multiple sensor data into local flash. Data can be accessed and displayed as graph in the WebUI running on the device.
+This project logs multiple sensor values to the device’s internal flash memory.
+The recorded data can be accessed through the integrated Web UI, where it is displayed as interactive graphs directly served by the device.
 
-Previously the idea was to use an ESP8266. But mainly due to the fact that the LOLIN Pico C3 (ESP32-C3) comes with onboard battery charger, we switched. Additionally it comes with an RTC module more RAM and therefore more calculation power for the Webserver. It can also be switched into deep-sleep mode for low power consumption.
+The initial concept was based on the ESP8266 platform. However, the hardware was later switched to the LOLIN Pico C3 (ESP32-C3), mainly due to its integrated battery charger, increased RAM capacity, and improved processing performance for running the embedded web server.
+
+The ESP32-C3 also provides deep-sleep capability for low-power operation and offers more resources for handling data processing and visualization tasks efficiently.
 
 ## Overview
 The device consists of an ESP32 with several sensors connected. This device connects to the WLAN and can be accessed with a PC or smart phone or similar devices.
