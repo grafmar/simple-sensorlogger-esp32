@@ -51,7 +51,7 @@ input[type=range] { width:250px; }
 
 <div class="section">
 <label>Interval:</label>
-<input type="number" id="intervalValue" min="1" value="15">
+<input type="number" id="intervalValue" min="1" value="%INTERVAL%">
 <select id="intervalUnit">
 <option value="1">s</option>
 <option value="60">m</option>
@@ -67,7 +67,7 @@ input[type=range] { width:250px; }
 
 <div class="section">
 <label>Log Size:</label>
-<input type="range" id="fileSlider" min="2" max="48" name="numChunks" value="16" oninput="updateCalculation()">
+<input type="range" id="fileSlider" min="2" max="48" name="numChunks" value="%NUMFILES%" oninput="updateCalculation()">
 <button type="button" class="button" onclick="document.getElementById('fileSlider').value=16; updateCalculation();">Small</button>
 <button type="button" class="button" onclick="document.getElementById('fileSlider').value=32; updateCalculation();">Mid</button>
 <button type="button" class="button" onclick="document.getElementById('fileSlider').value=48; updateCalculation();">Big</button>
@@ -83,7 +83,7 @@ input[type=range] { width:250px; }
 <h3>Calculation</h3>
 <p>Interval in seconds: <span id="intervalSec"></span>s</p>
 <p>Max chunk size: 32 kB</p>
-<p>Estimated log duration: <span id="logDuration"></span></p>
+<p>Estimated log duration (min): <span id="logDuration"></span></p>
 </div>
 
 </div>
@@ -94,7 +94,7 @@ input[type=range] { width:250px; }
 
 <script>
 const maxChunkKB = 32;
-const entrySize = 47;
+const entrySize = 47; // Bytes per log entry
 const entriesPerChunk = (maxChunkKB*1024)/entrySize;
 
 const intervalValueEl = document.getElementById('intervalValue');
@@ -117,6 +117,7 @@ function updateCalculation() {
   let unit = parseFloat(intervalUnitEl.value);
   let intervalSec = interval * unit;
 
+  // Update hidden input for form submission
   intervalSecInputEl.value = intervalSec;
 
   let numChunks = parseInt(fileSliderEl.value);
@@ -138,10 +139,12 @@ function setIntervalShortcut(value, unitStr) {
   updateCalculation();
 }
 
+// Events
 intervalValueEl.addEventListener('input', updateCalculation);
 intervalUnitEl.addEventListener('change', updateCalculation);
 fileSliderEl.addEventListener('input', updateCalculation);
 
+// Initial
 updateCalculation();
 </script>
 
