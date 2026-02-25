@@ -15,9 +15,6 @@
 #define WIFI_TIMEOUT       15000   // ms
 #define DEFAULT_LOG_INTERVAL_S    1200   // default: 20 minute logging interval
 #define DEFAULT_NUM_OF_LOG_FILES    16   // default: 16 log chunks
-
-//#define MAX_CHUNKS         16
-#define MAX_CHUNKS         48
 #define CHUNK_SIZE_BYTES  32768   // 32 KB per log chunk
 
 /*
@@ -93,7 +90,7 @@ void setup() {
   startSNTP();
   waitForTime();
 
-  detectCurrentChunk();
+  enforceLogFileLimit();
 
   startServer();
 }
@@ -107,7 +104,7 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  if (now - lastLogTime > (logInterval * 1000)) {
+  if (now - lastLogTime > (logInterval * 1000UL)) {
     lastLogTime = now;
 
     time_t ts = time(nullptr);  // RTC time (Unix UTC)
@@ -296,15 +293,13 @@ void listFilesSerial() {
 
 /*
   On boot:
-  - Remove files beyond MAX_CHUNKS
+  - Remove files beyond numOfLogFiles
   - Nothing else required
 */
-void detectCurrentChunk() {
-
+void enforceLogFileLimit() {
   Serial.println("Checking log file limits...");
-
-  // Delete files exceeding MAX_CHUNKS
-  for (int i = MAX_CHUNKS; i < 255; i++) {
+  // Delete files exceeding numOfLogFiles
+  for (int i = numOfLogFiles; i < 60; i++) {
     String path = "/log_" + String(i) + ".csv";
     if (LittleFS.exists(path)) {
       Serial.printf("Removing old file: %s\n", path.c_str());
@@ -328,13 +323,13 @@ void rotateLogs() {
   Serial.println("Rotating log files (FIFO mode)");
 
   // Delete oldest file if it exists
-  String oldest = "/log_" + String(MAX_CHUNKS - 1) + ".csv";
+  String oldest = "/log_" + String(numOfLogFiles - 1) + ".csv";
   if (LittleFS.exists(oldest)) {
     LittleFS.remove(oldest);
   }
 
   // Shift files backwards (from high to low)
-  for (int i = MAX_CHUNKS - 2; i >= 0; i--) {
+  for (int i = numOfLogFiles - 2; i >= 0; i--) {
 
     String oldName = "/log_" + String(i) + ".csv";
     String newName = "/log_" + String(i + 1) + ".csv";
@@ -389,12 +384,17 @@ void writeLog(time_t ts, float temp) {
     Log settings handling
   ============================================================================
 */
+void validateLogSettings() {
+  if (logInterval < 1) logInterval = DEFAULT_LOG_INTERVAL_S;
+  if (numOfLogFiles < 2 || numOfLogFiles > 48) numOfLogFiles = DEFAULT_NUM_OF_LOG_FILES;
+}
 
 void loadLogSettings() {
   prefs.begin("logcfg", true); // read-only
   logInterval = prefs.getUInt("interval", DEFAULT_LOG_INTERVAL_S);
   numOfLogFiles  = prefs.getUChar("numFiles", DEFAULT_NUM_OF_LOG_FILES);
   prefs.end();
+  validateLogSettings();
 }
 
 void saveLogSettings() {
@@ -426,7 +426,6 @@ String loadHtmlTemplate(const char* path, uint32_t interval, uint8_t numFiles) {
 void startServer() {
 
   server.on("/list", HTTP_GET, [](AsyncWebServerRequest *request) {
-
     String html = "<h2>Files</h2><ul>";
     File root = LittleFS.open("/");
     File f = root.openNextFile();
@@ -448,11 +447,17 @@ void startServer() {
     request->send(200, "text/html", page);
   });
 
-  server.on("/savesettings", HTTP_POST, [](AsyncWebServerRequest *request){
-    if(request->hasParam("interval", true) && request->hasParam("numFiles", true)){
-      logInterval = request->getParam("interval", true)->value().toInt();
-      numOfLogFiles  = request->getParam("numFiles", true)->value().toInt();
+  server.on("/savesettings", HTTP_GET, [](AsyncWebServerRequest *request){
+    Serial.printf("Savesettings requested\n");
+    if(request->hasParam("interval") && request->hasParam("numChunks")){
+      logInterval = request->getParam("interval")->value().toInt();
+      numOfLogFiles  = request->getParam("numChunks")->value().toInt();
+      validateLogSettings();
       saveLogSettings();
+      Serial.printf("Saved Log Settings: interval=%lus, numOfFiles=%u\n", logInterval, numOfLogFiles);
+    }
+    else {
+      Serial.println("Savesettings: Parameters missing!");
     }
     request->redirect("/");
   });
@@ -560,7 +565,7 @@ bool openNextLogFile() {
 
 void handleDownload(AsyncWebServerRequest *request) {
 
-  dlIndex = MAX_CHUNKS - 1;   // start with oldest
+  dlIndex = numOfLogFiles - 1;   // start with oldest
   dlActive = true;
   dlFile.close();
 
