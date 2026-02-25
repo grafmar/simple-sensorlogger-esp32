@@ -102,7 +102,8 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  if (now - lastLogTime > (logInterval * 1000UL)) {
+  // postpone logging if download is active to avoid file access conflicts
+  if ((now - lastLogTime > (logInterval * 1000UL)) && (!dlActive)) {
     lastLogTime = now;
 
     time_t ts = time(nullptr);  // RTC time (Unix UTC)
@@ -276,6 +277,10 @@ void startLittleFS() {
 void listFilesSerial() {
   Serial.println("\nLittleFS content:");
   File root = LittleFS.open("/");
+  if(!root) {
+    Serial.println("Failed to open root directory");
+    return;
+  }
   File f = root.openNextFile();
   while (f) {
     Serial.printf("  %s (%d bytes)\n", f.name(), f.size());
@@ -348,13 +353,19 @@ void rotateLogs() {
   -> create fresh log_0
 */
 void writeLog(time_t ts, float temp) {
+  // log files are accessed by download handler → skip logging to avoid conflicts
+  // should be catched before calling writeLog()
+  if(dlActive) return;
 
   String path = "/log_0.csv";
 
   if (LittleFS.exists(path)) {
 
     File f = LittleFS.open(path, "r");
-
+    if(!f) {
+      Serial.printf("Failed to open %s\n", path.c_str());
+      return;
+    }
     if (f.size() >= CHUNK_SIZE_BYTES) {
       f.close();
       rotateLogs();
@@ -364,6 +375,10 @@ void writeLog(time_t ts, float temp) {
   }
 
   File f = LittleFS.open(path, "a");
+  if(!f) {
+    Serial.printf("Failed to open %s\n", path.c_str());
+    return;
+  }
 
   f.printf("%lu;%.2f;%.2f;%.2f;%.2f;%.2f;%.2f\n",
            (uint32_t)ts,
