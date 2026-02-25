@@ -59,7 +59,7 @@ The physical log files remain separate on the device; data.csv is generated on-t
 To program the ESP32 for this project you need the following SW and additional libraries and packages:
 - Arduino IDE (V2.3.7)
 - ESP Async Webserver (3.10.0) by ESP32Async
-- ESP Async TCP (2.0.0) by ESP32Async
+- Async TCP (3.4.10) by ESP32Async
 - Board support package `esp32` by Espressif Systems (V3.3.6)
 - LittleFS_esp32 by lorol (1.0.6)
 

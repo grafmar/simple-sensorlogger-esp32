@@ -45,10 +45,8 @@ TempSensor tempSensors;
 AsyncWebServer server(80);
 Preferences prefs;
 
-File dlFile;
 File fsUploadFile;
-int dlIndex = 0;
-bool dlActive = false;
+SemaphoreHandle_t fsMutex;
 
 uint32_t logInterval = DEFAULT_LOG_INTERVAL_S;
 uint8_t numOfLogFiles = DEFAULT_NUM_OF_LOG_FILES;
@@ -76,6 +74,12 @@ void setup() {
 
   pinMode(SETUP_PIN, INPUT_PULLUP);
 
+  fsMutex = xSemaphoreCreateMutex();
+  if (!fsMutex) {
+    Serial.println("Failed to create FS mutex!");
+    ESP.restart();
+  }
+
   loadLogSettings();
 
   tempSensors.begin();
@@ -102,8 +106,7 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // postpone logging if download is active to avoid file access conflicts
-  if ((now - lastLogTime > (logInterval * 1000UL)) && (!dlActive)) {
+  if (now - lastLogTime > (logInterval * 1000UL)) {
     lastLogTime = now;
 
     time_t ts = time(nullptr);  // RTC time (Unix UTC)
@@ -301,13 +304,16 @@ void listFilesSerial() {
 */
 void enforceLogFileLimit() {
   Serial.println("Checking log file limits...");
-  // Delete files exceeding numOfLogFiles
-  for (int i = numOfLogFiles; i < 60; i++) {
-    String path = "/log_" + String(i) + ".csv";
-    if (LittleFS.exists(path)) {
-      Serial.printf("Removing old file: %s\n", path.c_str());
-      LittleFS.remove(path);
+  if (xSemaphoreTake(fsMutex, portMAX_DELAY)) {
+    // Delete files exceeding numOfLogFiles
+    for (int i = numOfLogFiles; i < 60; i++) {
+      String path = "/log_" + String(i) + ".csv";
+      if (LittleFS.exists(path)) {
+        Serial.printf("Removing old file: %s\n", path.c_str());
+        LittleFS.remove(path);
+      }
     }
+    xSemaphoreGive(fsMutex);
   }
 }
 
@@ -322,27 +328,28 @@ void enforceLogFileLimit() {
   log_(MAX-1) gets deleted
 */
 void rotateLogs() {
-
   Serial.println("Rotating log files (FIFO mode)");
 
-  // Delete oldest file if it exists
-  String oldest = "/log_" + String(numOfLogFiles - 1) + ".csv";
-  if (LittleFS.exists(oldest)) {
-    LittleFS.remove(oldest);
-  }
+  if (xSemaphoreTake(fsMutex, portMAX_DELAY)) {
+    // Delete oldest file if it exists
+    String oldest = "/log_" + String(numOfLogFiles - 1) + ".csv";
+    if (LittleFS.exists(oldest)) {
+      LittleFS.remove(oldest);
+    }
 
   // Shift files backwards (from high to low)
-  for (int i = numOfLogFiles - 2; i >= 0; i--) {
+    for (int i = numOfLogFiles - 2; i >= 0; i--) {
 
-    String oldName = "/log_" + String(i) + ".csv";
-    String newName = "/log_" + String(i + 1) + ".csv";
+      String oldName = "/log_" + String(i) + ".csv";
+      String newName = "/log_" + String(i + 1) + ".csv";
 
-    if (LittleFS.exists(oldName)) {
-      LittleFS.rename(oldName, newName);
+      if (LittleFS.exists(oldName)) {
+        LittleFS.rename(oldName, newName);
+      }
     }
-  }
 
-  // Now log_0 is free for new file
+    xSemaphoreGive(fsMutex);
+  }
 }
 
 
@@ -353,43 +360,47 @@ void rotateLogs() {
   -> create fresh log_0
 */
 void writeLog(time_t ts, float temp) {
-  // log files are accessed by download handler → skip logging to avoid conflicts
-  // should be catched before calling writeLog()
-  if(dlActive) return;
+  if (!xSemaphoreTake(fsMutex, portMAX_DELAY))
+    return;
 
   String path = "/log_0.csv";
 
   if (LittleFS.exists(path)) {
 
     File f = LittleFS.open(path, "r");
-    if(!f) {
-      Serial.printf("Failed to open %s\n", path.c_str());
-      return;
-    }
-    if (f.size() >= CHUNK_SIZE_BYTES) {
-      f.close();
-      rotateLogs();
+    if (f) {
+      if (f.size() >= CHUNK_SIZE_BYTES) {
+        f.close();
+        xSemaphoreGive(fsMutex);   // Mutex freigeben vor Rotation
+        rotateLogs();
+        if (!xSemaphoreTake(fsMutex, portMAX_DELAY))
+          return;
+      } else {
+        f.close();
+      }
     } else {
-      f.close();
+      Serial.printf("Failed to open log file for size check: %s\n", path.c_str());
     }
   }
 
   File f = LittleFS.open(path, "a");
-  if(!f) {
-    Serial.printf("Failed to open %s\n", path.c_str());
-    return;
+  if (f) {
+
+    f.printf("%lu;%.2f;%.2f;%.2f;%.2f;%.2f;%.2f\n",
+             (uint32_t)ts,
+             temp,
+             2 * temp,
+             45.0 - 1.2 * temp,
+             2 * (45.0 - temp),
+             2.0 + 1.1 * temp,
+             43.0 - temp);
+
+    f.close();
+  }else {
+    Serial.printf("Failed to open log file for writing: %s\n", path.c_str());
   }
 
-  f.printf("%lu;%.2f;%.2f;%.2f;%.2f;%.2f;%.2f\n",
-           (uint32_t)ts,
-           temp,
-           2 * temp,
-           45.0 - 1.2 * temp,
-           2 * (45.0 - temp),
-           2.0 + 1.1 * temp,
-           43.0 - temp);
-
-  f.close();
+  xSemaphoreGive(fsMutex);
 }
 
 /*
@@ -562,67 +573,56 @@ void startServer() {
   ============================================================================
 */
 
-bool openNextLogFile() {
-
-  while (dlIndex >= 0) {
-
-    String path = "/log_" + String(dlIndex--) + ".csv";
-
-    if (LittleFS.exists(path)) {
-      dlFile = LittleFS.open(path, "r");
-      return dlFile;
-    }
-  }
-
-  return false;
-}
-
 void handleDownload(AsyncWebServerRequest *request) {
 
-  dlIndex = numOfLogFiles - 1;   // start with oldest
-  dlActive = true;
-  dlFile.close();
+  struct DownloadState {
+    int index;
+    File file;
+  };
 
-  openNextLogFile();
+  DownloadState *state = new DownloadState();
+  state->index = numOfLogFiles - 1;
 
   AsyncWebServerResponse *response =
     request->beginChunkedResponse(
       "text/csv",
-      [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+      [state](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
 
-        if (!dlActive) return 0;
+        if (!xSemaphoreTake(fsMutex, portMAX_DELAY))
+          return 0;
 
         const size_t MAX_PER_CALL = 2048;
 
-        if (!dlFile) {
-          dlActive = false;
-          return 0;
+        while (true) {
+
+          if (!state->file) {
+
+            if (state->index < 0) {
+              xSemaphoreGive(fsMutex);
+              delete state;
+              return 0;   // fertig
+            }
+
+            String path = "/log_" + String(state->index--) + ".csv";
+
+            if (LittleFS.exists(path)) {
+              state->file = LittleFS.open(path, "r");
+            }
+
+            continue;
+          }
+
+          size_t toRead = min(MAX_PER_CALL, maxLen);
+          size_t bytesRead = state->file.read(buffer, toRead);
+
+          if (bytesRead > 0) {
+            xSemaphoreGive(fsMutex);
+            return bytesRead;
+          }
+
+          // Datei fertig
+          state->file.close();
         }
-
-        size_t toRead = min(MAX_PER_CALL, maxLen);
-        size_t bytesRead = dlFile.read(buffer, toRead);
-
-        if (bytesRead > 0) {
-          return bytesRead;
-        }
-
-        // current file finished → open next
-        dlFile.close();
-
-        if (!openNextLogFile()) {
-          dlActive = false;
-          return 0;
-        }
-
-        // read from next file immediately
-        bytesRead = dlFile.read(buffer, toRead);
-
-        if (bytesRead > 0) {
-          return bytesRead;
-        }
-
-        dlActive = false;
-        return 0;
       });
 
   response->addHeader(
