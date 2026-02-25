@@ -2,63 +2,94 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Log Configuration</title>
+<title>Simple Sensorlogger ESP32 – Log Configuration</title>
+<link rel="icon" type="image/png" sizes="144x144" href="/favicon-144x144.png">
+<link rel="icon" type="image/png" sizes="96x96" href="/favicon.ico">
+<link rel="manifest" href="/manifest.json">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body { font-family: Arial, sans-serif; margin: 20px; }
-label { margin-right: 10px; }
-input[type=number] { width: 60px; }
-select { width: 40px; margin-right: 40px; }
-button { margin-left: 5px; }
-#calc { margin-top: 20px; padding: 10px; border: 1px solid #ccc; width: 500px; }
-#fileControls { margin-top: 10px; display: flex; align-items: center; }
-#fileSlider { width: 200px; vertical-align: middle; }
-#logSize { margin-left: 20px; font-weight: bold; }
+body { font-family: Arial,sans-serif; background:#f4f6f8; margin:20px; }
+h1 { text-align:center; margin-bottom:20px; }
+.card { max-width:750px; margin:40px auto; background:#fff; padding:30px;
+        border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.08); }
+.section { margin-bottom:25px; }
+label { margin-right:10px; }
+input[type=number] { width:60px; padding:4px; }
+select { width:60px; padding:4px; margin-right:20px; }
+input[type=range] { width:250px; }
+.button {
+  display:inline-block; padding:8px 14px;
+  background:#2b7cff; color:#fff;
+  border-radius:6px; font-weight:bold;
+  border:none; cursor:pointer;
+  transition:background 0.2s;
+}
+.button:hover { background:#1f5fd6; }
+.button-group button { margin-right:5px; }
+#calc {
+  margin-top:20px; padding:15px;
+  background:#f9fafc;
+  border-radius:8px;
+  border:1px solid #e3e6ea;
+}
+#logSize { margin-left:20px; font-weight:bold; }
+.footer-controls { text-align:center; margin-top:30px; }
 </style>
 </head>
+
 <body>
+
+<h1>Simple Sensorlogger ESP32</h1>
+
+<div class="card">
 
 <h2>Log Settings</h2>
 
 <form id="logForm" action="/savesettings" method="get">
-  <!-- Hidden input for interval in seconds -->
-  <input type="hidden" id="intervalSecInput" name="interval" value="15">
 
-  <label>Interval:</label>
-  <input type="number" id="intervalValue" min="1" value="15">
-  <select id="intervalUnit">
-    <option value="1">s</option>
-    <option value="60">m</option>
-    <option value="3600">h</option>
-  </select>
+<input type="hidden" id="intervalSecInput" name="interval" value="15">
 
-  <!-- Shortcut Buttons just set interval in seconds -->
-  <button type="button" onclick="setIntervalShortcut(10,'s')">10s</button>
-  <button type="button" onclick="setIntervalShortcut(1,'m')">1m</button>
-  <button type="button" onclick="setIntervalShortcut(10,'m')">10m</button>
-  <button type="button" onclick="setIntervalShortcut(20,'m')">20m</button>
-  <button type="button" onclick="setIntervalShortcut(1,'h')">1h</button>
-  <br><br>
+<div class="section">
+<label>Interval:</label>
+<input type="number" id="intervalValue" min="1" value="%INTERVAL%">
+<select id="intervalUnit">
+<option value="1">s</option>
+<option value="60">m</option>
+<option value="3600">h</option>
+</select>
 
-  <div id="fileControls">
-    <label>Log Size:</label>
-    <input type="range" id="fileSlider" min="2" max="48" name="numChunks" value="16" oninput="updateSliderValue()">
-    <div style="display:flex; margin-left: 10px;">
-      <button type="button" onclick="document.getElementById('fileSlider').value=16; updateSliderValue();">Small</button>
-      <button type="button" onclick="document.getElementById('fileSlider').value=32; updateSliderValue();">Mid</button>
-      <button type="button" onclick="document.getElementById('fileSlider').value=48; updateSliderValue();">Big</button>
-    </div>
-    <div id="logSize">?? (? chunks)</div>
-  </div>
+<button type="button" class="button" onclick="setIntervalShortcut(10,'s')">10s</button>
+<button type="button" class="button" onclick="setIntervalShortcut(1,'m')">1m</button>
+<button type="button" class="button" onclick="setIntervalShortcut(10,'m')">10m</button>
+<button type="button" class="button" onclick="setIntervalShortcut(20,'m')">20m</button>
+<button type="button" class="button" onclick="setIntervalShortcut(1,'h')">1h</button>
+</div>
 
-  <br>
-  <button type="submit">Save</button>
+<div class="section">
+<label>Log Size:</label>
+<input type="range" id="fileSlider" min="2" max="48" name="numChunks" value="%NUMFILES%" oninput="updateCalculation()">
+<button type="button" class="button" onclick="document.getElementById('fileSlider').value=16; updateCalculation();">Small</button>
+<button type="button" class="button" onclick="document.getElementById('fileSlider').value=32; updateCalculation();">Mid</button>
+<button type="button" class="button" onclick="document.getElementById('fileSlider').value=48; updateCalculation();">Big</button>
+<div id="logSize">?? (? chunks)</div>
+</div>
+
+<div class="section">
+<button type="submit" class="button">Save Settings</button>
+</div>
 </form>
 
 <div id="calc">
-  <h3>Calculation</h3>
-  <p>Interval in seconds: <span id="intervalSec"></span>s</p>
-  <p>Max chunk size: 32 kB</p>
-  <p>Estimated log duration (min): <span id="logDuration"></span></p>
+<h3>Calculation</h3>
+<p>Interval in seconds: <span id="intervalSec"></span>s</p>
+<p>Max chunk size: 32 kB</p>
+<p>Estimated log duration (min): <span id="logDuration"></span></p>
+</div>
+
+</div>
+
+<div class="footer-controls">
+<a href="/" class="button">⬅ Back</a>
 </div>
 
 <script>
@@ -78,7 +109,7 @@ function formatDuration(seconds) {
   const hours = Math.floor(seconds / 3600);
   seconds %= 3600;
   const minutes = Math.floor(seconds / 60);
-  return `${days} days, ${hours} hours, ${minutes} minutes`;
+  return days+" days, "+hours+" hours, "+minutes+" minutes";
 }
 
 function updateCalculation() {
@@ -96,7 +127,7 @@ function updateCalculation() {
   let totalDurationSec = intervalSec * entriesPerChunk * calcChunks;
 
   document.getElementById('intervalSec').textContent = intervalSec;
-  logSizeEl.textContent = `${totalSizeKB.toFixed(1)} kB (${numChunks} chunks)`;
+  logSizeEl.textContent = totalSizeKB.toFixed(1) + " kB (" + numChunks + " chunks)";
   document.getElementById('logDuration').textContent = formatDuration(totalDurationSec);
 }
 
@@ -105,10 +136,6 @@ function setIntervalShortcut(value, unitStr) {
   if(unitStr === 's') intervalUnitEl.value = 1;
   else if(unitStr === 'm') intervalUnitEl.value = 60;
   else if(unitStr === 'h') intervalUnitEl.value = 3600;
-  updateCalculation();
-}
-
-function updateSliderValue() {
   updateCalculation();
 }
 
