@@ -13,8 +13,8 @@
 
 #define SETUP_PIN          9       // LOW = force WiFi setup portal
 #define WIFI_TIMEOUT       15000   // ms
-//#define LOG_INTERVAL_MS    60000   // 1 minute logging interval
-#define LOG_INTERVAL_MS    5000   // 5s logging interval
+#define DEFAULT_LOG_INTERVAL_S    1200   // default: 20 minute logging interval
+#define DEFAULT_NUM_OF_LOG_FILES    16   // default: 16 log chunks
 
 //#define MAX_CHUNKS         16
 #define MAX_CHUNKS         48
@@ -53,6 +53,9 @@ File fsUploadFile;
 int dlIndex = 0;
 bool dlActive = false;
 
+uint32_t logInterval = DEFAULT_LOG_INTERVAL_S;
+uint8_t numOfLogFiles = DEFAULT_NUM_OF_LOG_FILES;
+
 /*
   ============================================================================
     Logging state
@@ -75,6 +78,8 @@ void setup() {
   Serial.println("\n--- ESP32-C3 Sensor Logger (Async + RTC + Rolling Logs) ---");
 
   pinMode(SETUP_PIN, INPUT_PULLUP);
+
+  loadLogSettings();
 
   tempSensors.begin();
 
@@ -102,7 +107,7 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  if (now - lastLogTime > LOG_INTERVAL_MS) {
+  if (now - lastLogTime > (logInterval * 1000)) {
     lastLogTime = now;
 
     time_t ts = time(nullptr);  // RTC time (Unix UTC)
@@ -381,6 +386,39 @@ void writeLog(time_t ts, float temp) {
 
 /*
   ============================================================================
+    Log settings handling
+  ============================================================================
+*/
+
+void loadLogSettings() {
+  prefs.begin("logcfg", true); // read-only
+  logInterval = prefs.getUInt("interval", DEFAULT_LOG_INTERVAL_S);
+  numOfLogFiles  = prefs.getUChar("numFiles", DEFAULT_NUM_OF_LOG_FILES);
+  prefs.end();
+}
+
+void saveLogSettings() {
+  prefs.begin("logcfg", false); // write
+  prefs.putUInt("interval", logInterval);
+  prefs.putUChar("numFiles", numOfLogFiles);
+  prefs.end();
+}
+
+String loadHtmlTemplate(const char* path, uint32_t interval, uint8_t numFiles) {
+  File file = LittleFS.open(path, "r");
+  if(!file) return "Template not found";
+
+  String html = file.readString();
+  file.close();
+
+  html.replace("%INTERVAL%", String(logInterval));
+  html.replace("%NUMFILES%", String(numOfLogFiles));
+
+  return html;
+}
+
+/*
+  ============================================================================
     Async Web Server
   ============================================================================
 */
@@ -404,6 +442,20 @@ void startServer() {
   });
 
   server.on("/data.csv", HTTP_GET, handleDownload);
+
+  server.on("/config.html", HTTP_GET, [](AsyncWebServerRequest *request){
+    String page = loadHtmlTemplate("/config.html.template", logInterval, numOfLogFiles);
+    request->send(200, "text/html", page);
+  });
+
+  server.on("/savesettings", HTTP_POST, [](AsyncWebServerRequest *request){
+    if(request->hasParam("interval", true) && request->hasParam("numFiles", true)){
+      logInterval = request->getParam("interval", true)->value().toInt();
+      numOfLogFiles  = request->getParam("numFiles", true)->value().toInt();
+      saveLogSettings();
+    }
+    request->redirect("/");
+  });
 
   server.on(
     "/upload.html",
