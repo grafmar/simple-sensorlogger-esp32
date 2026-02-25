@@ -1,17 +1,19 @@
 # simple-sensorlogger-esp32
-Logs multiple sensor data into local flash. Data can be accessed and displayed as graph in the WebUI running on the device.
+This project logs multiple sensor values to the device’s internal flash memory.
+The recorded data can be accessed through the integrated Web UI, where it is displayed as interactive graphs directly served by the device.
 
-Previously the idea was to use an ESP8266. But mainly due to the fact that the LOLIN Pico C3 (ESP32-C3) comes with onboard battery charger, we switched. Additionally it comes with an RTC module more RAM and therefore more calculation power for the Webserver. It can also be switched into deep-sleep mode for low power consumption.
+The initial concept was based on the ESP8266 platform. However, the hardware was later switched to the LOLIN Pico C3 (ESP32-C3), mainly due to its integrated battery charger, increased RAM capacity, and improved processing performance for running the embedded web server.
+
+The ESP32-C3 also provides deep-sleep capability for low-power operation and offers more resources for handling data processing and visualization tasks efficiently.
 
 ## Overview
 The device consists of an ESP32 with several sensors connected. This device connects to the WLAN and can be accessed with a PC or smart phone or similar devices.
 
 <p align="center"><img src="doc/device_overview.png" alt="Device Overview" width="60%"/></p>
 
+The webserver running on the ESP32 serves the files directly from the filesystem (LittleFS). All the files like javascript html and images are ready to use on the filesystem and no active code has to be executed to show the webpage with the sensor data except for the sensor data themselves. Because they are stored in multiple files, a streaming agent concatenas all files and streams it as one big csv file.
 
-The webserver running on the ESP32 serves the files directly from the filesystem (LittleFS). All the files are ready to use on the filesystem and no active code has to be executed to show the webpage with the sensor data.
-
-On the other hand the sensor sampler samples all the sensors every configured period and stores the data into data.csv on the LittleFS. This file can than be accessed directly from the webpage.
+On the other hand the sensor sampler samples all the sensors every configured period and stores the data into the log chunkes on the LittleFS.
 
 <p align="center"><img src="doc/sw_overview.png" alt="SW Overview" width="60%"/></p>
 
@@ -27,14 +29,31 @@ The sensors to be used is not yet defined
 ## Software
 This project is still under construction. At the moment only a random number is logged as a temperature value.
 
-### Problems with Async webserver: ESP core 3.x.x is not compatible with the libraries. Had also problem after altering the library:
+### Log File Handling
+Sensor data is stored in rotating log files.
+Each log file has a fixed maximum chunk size of 32 kB.
 
-Altered lines in `C:\Users\<user>\Documents\Arduino\libraries\ESPAsyncWebServer\src\WebAuthentication.cpp` Line 74 and following:
-- `mbedtls_md5_starts_ret` with `mbedtls_md5_starts`
-- `mbedtls_md5_update_ret` with `mbedtls_md5_update`
-- `mbedtls_md5_finish_ret` with `mbedtls_md5_finish`
+New sensor entries are appended to `log_0.csv`.
+Once this file reaches the maximum chunk size, a log rotation is triggered:
 
-In files `AsyncEventSource.cpp` and `AsyncWebSocket.cpp` replace `ets_printf` with `printf`.
+- All existing log files are renamed with an incremented index
+- The oldest log chunk (highest index) is deleted
+- A new `log_0.csv` is created for continued logging
+
+This mechanism ensures constant storage usage while preserving the most recent data. By rotating log files, write operations are distributed across different flash sectors rather than continuously rewriting the same memory area. This reduces flash wear and increases long-term storage reliability.
+
+<p align="center"><img src="doc/log_rotation.png" alt="Log rotation"/><br>log rotation</p>
+
+### Web Integration
+For seamless integration into the web interface, the web server dynamically concatenates all log files and streams them as a single virtual file named `data.csv`.
+
+This streamed file:
+- can be processed directly in JavaScript for visualization
+- can be downloaded for external analysis
+
+The physical log files remain separate on the device; data.csv is generated on-the-fly during the request.
+
+<p align="center"><img src="doc/log_writing_streaming.png" alt="Log writing and streaming"/><br>log writing and streaming</p>
 
 ## Installation
 To program the ESP32 for this project you need the following SW and additional libraries and packages:
@@ -43,6 +62,9 @@ To program the ESP32 for this project you need the following SW and additional l
 - ESP Async TCP (2.0.0) by ESP32Async
 - Board support package `esp32` by Espressif Systems (V3.3.6)
 - LittleFS_esp32 by lorol (1.0.6)
+
+Note:
+*Problems may occur with Async webserver if the wrong libraries are used: ESP core 3.x.x is not compatible with the libraries.*
 
 
 - LittleFS uploader tool [arduino-littlefs-upload](https://github.com/earlephilhower/arduino-littlefs-upload?tab=readme-ov-file):
@@ -68,13 +90,8 @@ Download of 1.5MB data.csv:
 
 ```
 curl -o NUL http://10.53.182.228/data.csv -w "Total time: %{time_total} seconds\n"
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100 1495k    0 1495k    0     0   141k      0 --:--:--  0:00:10 --:--:--  175k
-Total time: 10.552708 seconds
 ```
-So **~10.5s** for 1.5MB
-But the processing of the data and building of graph in the HTML-page takes some more time. So the load time on my machine is about **14s**.
+It takes **~10.5s** for 1.5MB. But the processing of the data and building of graph in the HTML-page takes some more time. So the load time on my machine is about **14s**.
 
 ## Acknowledgements
 The idea of this project is based on "Examples/16. Data logging/A-Temperature_logger" of the (https://github.com/tttapa/ESP8266/tree/master) repository. The sensor sampling code and HTML code have been mostly changed and also the chart library has been replaced with chart.js. But that's where the idea and has come from.
