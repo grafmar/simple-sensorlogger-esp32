@@ -383,7 +383,7 @@ void writeLog(time_t ts, float temp) {
   ============================================================================
 */
 void validateLogSettings() {
-  if (logInterval < 1) logInterval = DEFAULT_LOG_INTERVAL_S;
+  if (logInterval < 1 || logInterval > 1000000UL) logInterval = DEFAULT_LOG_INTERVAL_S;
   if (numOfLogFiles < 2 || numOfLogFiles > 48) numOfLogFiles = DEFAULT_NUM_OF_LOG_FILES;
   enforceLogFileLimit();
 }
