@@ -38,6 +38,18 @@
 		</a>
 	</div>
 
+	<div id="progressBox" class="progress-box">
+		<div id="downloadStatus">Downloading data.csv ...</div>
+		<div class="progress-bar">
+			<div id="downloadBar"></div>
+		</div>
+
+		<div id="parseStatus">Parsing CSV ...</div>
+		<div class="progress-bar">
+			<div id="parseBar"></div>
+		</div>
+	</div>
+
 	<div class="chart-container">
 		<h3>Temperature & Humidity</h3>
 		<canvas id="chartTempHum"></canvas>
@@ -53,24 +65,66 @@
 
 		/* ================= CSV LOADER ================= */
 		async function loadCSV(url) {
-			
+			const progressBox = document.getElementById("progressBox");
+			progressBox.style.display = "block";
+
 			const canvas1 = document.getElementById('chartTempHum');
 			const ctx1 = canvas1.getContext('2d');
 			ctx1.font = "30px Arial";
 			ctx1.fillText("Data loading ...",10,80);
+
 			const canvas2 = document.getElementById('chartCO2Pressure');
 			const ctx2 = canvas2.getContext('2d');
 			ctx2.font = "30px Arial";
 			ctx2.fillText("Data loading ...",10,80);
 
 			const resp = await fetch(url);
-			const text = await resp.text();
+
+			const total = resp.headers.get("content-length");
+			const reader = resp.body.getReader();
+
+			let received = 0;
+			let chunks = [];
+
+			while(true){
+				const {done,value} = await reader.read();
+				if(done) break;
+
+				chunks.push(value);
+				received += value.length;
+
+				document.getElementById("downloadStatus").textContent =
+					"Downloading data.csv: " + received + " bytes";
+
+				if(total){
+					const percent = (received / total) * 100;
+					document.getElementById("downloadBar").style.width = percent + "%";
+				}
+			}
+
+			const blob = new Blob(chunks);
+			const text = await blob.text();
+
+			document.getElementById("downloadStatus").textContent =
+				"Download finished (" + received + " bytes)";
+
+			/* ================= CSV PARSE ================= */
+
 			const rows = text.trim().split('\n');
 
-			const data = { time: [], temp1: [], hum1: [], pressure: [], temp2: [], hum2: [], co2: [] };
+			const data = {
+				time: [],
+				temp1: [],
+				hum1: [],
+				pressure: [],
+				temp2: [],
+				hum2: [],
+				co2: []
+			};
 
-			rows.forEach(line => {
-				const [ts, t1, h1, p, t2, h2, co2] = line.split(';');
+			for(let i=0;i<rows.length;i++){
+
+				const [ts, t1, h1, p, t2, h2, co2] = rows[i].split(';');
 
 				data.time.push(new Date(Number(ts) * 1000));
 				data.temp1.push(t1 !== '' ? Number(t1) : NaN);
@@ -79,7 +133,27 @@
 				data.temp2.push(t2 !== '' ? Number(t2) : NaN);
 				data.hum2.push(h2 !== '' ? Number(h2) : NaN);
 				data.co2.push(co2 !== '' ? Number(co2) : NaN);
-			});
+
+				/* progress update */
+
+				if(i % 500 === 0){
+					const percent = (i / rows.length) * 100;
+
+					document.getElementById("parseBar").style.width =
+						percent + "%";
+
+					document.getElementById("parseStatus").textContent =
+						"Parsing CSV: " + i + " / " + rows.length;
+				}
+			}
+
+			document.getElementById("parseBar").style.width = "100%";
+			document.getElementById("parseStatus").textContent =
+				"Parsing finished (" + rows.length + " rows)";
+
+			setTimeout(() => {
+				document.getElementById("progressBox").style.display = "none";
+			}, 200);
 
 			return data;
 		}
