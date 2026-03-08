@@ -23,7 +23,7 @@
 	</div>
 
 	<div class="hint">
-		🖱️ Mouse wheel = Zoom &nbsp;|&nbsp;
+		Ctrl + 🖱️ Mouse wheel = Zoom &nbsp;|&nbsp;
 		⇧ Shift + Drag = Zoom (Selection) &nbsp;|&nbsp;
 		Ctrl + Drag = Pan &nbsp;|&nbsp;
 		Double-click = Reset
@@ -61,6 +61,9 @@
 	</div>
 
 	<script>
+		let initialMinX = null;
+		let initialMaxX = null;
+
 		Chart.register(ChartZoom);
 
 		/* ================= CSV LOADER ================= */
@@ -166,7 +169,7 @@
 				plugins: {
 					zoom: {
 						pan: { enabled: true, mode: 'x', modifierKey: 'ctrl' },
-						zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', drag: { enabled: true, modifierKey: 'shift' } }
+						zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, mode: 'x', drag: { enabled: true, modifierKey: 'shift' } }
 					}
 				},
 				scales: {
@@ -195,6 +198,9 @@
 		let chartTempHum, chartCO2Pressure;
 
 		loadCSV('data.csv').then(data => {
+
+			initialMinX = data.time[0];
+			initialMaxX = data.time[data.time.length - 1];
 
 			chartTempHum = new Chart(document.getElementById('chartTempHum'), {
 				type: 'line',
@@ -263,8 +269,13 @@
 
 		/* ================= RESET ================= */
 		document.addEventListener('dblclick', () => {
-			chartTempHum.resetZoom();
-			chartCO2Pressure.resetZoom();
+
+			[chartTempHum, chartCO2Pressure].forEach(c => {
+				c.options.scales.x.min = initialMinX;
+				c.options.scales.x.max = initialMaxX;
+				c.update();
+			});
+
 		});
 	</script>
 
