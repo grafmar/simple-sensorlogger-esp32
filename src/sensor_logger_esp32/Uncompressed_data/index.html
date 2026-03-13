@@ -38,18 +38,6 @@
 		</a>
 	</div>
 
-	<div id="progressBox" class="progress-box">
-		<div id="downloadStatus">Downloading data.csv ...</div>
-		<div class="progress-bar">
-			<div id="downloadBar"></div>
-		</div>
-
-		<div id="parseStatus">Parsing CSV ...</div>
-		<div class="progress-bar">
-			<div id="parseBar"></div>
-		</div>
-	</div>
-
 	<div class="chart-container">
 		<h3>Temperature & Humidity</h3>
 		<canvas id="chartTempHum"></canvas>
@@ -65,21 +53,31 @@
 		let initialMaxX = null;
 
 		Chart.register(ChartZoom);
+		
+		function formatBytes(n){
+			return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g,"'");
+		}
+		
+		function drawLoading(bytes){
+			const text = "(" + formatBytes(bytes) + " bytes)";
 
+			["chartTempHum","chartCO2Pressure"].forEach(id => {
+				const canvas = document.getElementById(id);
+				const ctx = canvas.getContext("2d");
+
+				ctx.clearRect(0,0,canvas.width,canvas.height);
+
+				ctx.font = "30px Arial";
+				ctx.fillText("Data loading ...",10,80);
+
+				ctx.font = "16px Arial";
+				ctx.fillText(text,10,110);
+			});
+		}
+		
 		/* ================= CSV LOADER ================= */
 		async function loadCSV(url) {
-			const progressBox = document.getElementById("progressBox");
-			progressBox.style.display = "block";
-
-			const canvas1 = document.getElementById('chartTempHum');
-			const ctx1 = canvas1.getContext('2d');
-			ctx1.font = "30px Arial";
-			ctx1.fillText("Data loading ...",10,80);
-
-			const canvas2 = document.getElementById('chartCO2Pressure');
-			const ctx2 = canvas2.getContext('2d');
-			ctx2.font = "30px Arial";
-			ctx2.fillText("Data loading ...",10,80);
+			drawLoading(0);
 
 			const resp = await fetch(url);
 
@@ -95,21 +93,12 @@
 
 				chunks.push(value);
 				received += value.length;
-
-				document.getElementById("downloadStatus").textContent =
-					"Downloading data.csv: " + received + " bytes";
-
-				if(total){
-					const percent = (received / total) * 100;
-					document.getElementById("downloadBar").style.width = percent + "%";
-				}
+				
+				drawLoading(received);
 			}
 
 			const blob = new Blob(chunks);
 			const text = await blob.text();
-
-			document.getElementById("downloadStatus").textContent =
-				"Download finished (" + received + " bytes)";
 
 			/* ================= CSV PARSE ================= */
 
@@ -136,27 +125,7 @@
 				data.temp2.push(t2 !== '' ? Number(t2) : NaN);
 				data.hum2.push(h2 !== '' ? Number(h2) : NaN);
 				data.co2.push(co2 !== '' ? Number(co2) : NaN);
-
-				/* progress update */
-
-				if(i % 500 === 0){
-					const percent = (i / rows.length) * 100;
-
-					document.getElementById("parseBar").style.width =
-						percent + "%";
-
-					document.getElementById("parseStatus").textContent =
-						"Parsing CSV: " + i + " / " + rows.length;
-				}
 			}
-
-			document.getElementById("parseBar").style.width = "100%";
-			document.getElementById("parseStatus").textContent =
-				"Parsing finished (" + rows.length + " rows)";
-
-			setTimeout(() => {
-				document.getElementById("progressBox").style.display = "none";
-			}, 200);
 
 			return data;
 		}
